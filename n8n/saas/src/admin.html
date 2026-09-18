@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Denoro · Administración</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>/*CSS*/</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <div class="brand"><i>D</i>Denoro <small>Administración</small></div>
+  <div class="spacer"></div>
+  <button id="logout" type="button" class="ghost" hidden>Salir</button>
+</div></header>
+<main class="wrap">
+  <section id="login" class="center"><form id="loginForm" class="card" style="width:min(380px,100%);text-align:left">
+    <h2>Entrar</h2><p class="hint" style="margin:0 0 14px">Introduce tu clave de administrador.</p>
+    <div class="field"><label for="key">Clave</label><input id="key" type="password" autocomplete="current-password" required></div>
+    <button class="primary" style="width:100%">Entrar</button><div id="loginMsg"></div>
+  </form></section>
+
+  <section id="dash" hidden>
+    <h1>Clientes</h1>
+    <p class="sub">Da de alta a cada cliente y envíale su enlace privado: desde ahí elige qué tiendas vigilar.</p>
+    <div class="stats">
+      <div class="stat"><b class="num" id="sClients">0</b><span>clientes activos</span></div>
+      <div class="stat"><b class="num" id="sLinks">0</b><span>enlaces vigilados</span></div>
+      <div class="stat"><b class="num" id="sErrors">0</b><span>enlaces con error</span></div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div style="overflow-x:auto"><table>
+          <thead><tr><th>Cliente</th><th class="r">Enlaces</th><th class="hide-s">Última revisión</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table></div>
+      </div>
+      <aside class="card">
+        <h2>Nuevo cliente</h2>
+        <form id="newForm" style="margin-top:12px">
+          <div class="field"><label for="nNombre">Nombre de la tienda</label><input id="nNombre" required maxlength="80"></div>
+          <div class="field"><label for="nEmail">Email para avisos</label><input id="nEmail" type="email"></div>
+          <div class="field"><label for="nChat">Telegram · chat ID (opcional)</label><input id="nChat" inputmode="numeric"></div>
+          <div class="row">
+            <div class="field"><label for="nMax">Enlaces máx.</label><select id="nMax"><option value="3">3 · Básico</option><option value="10" selected>10 · Estándar</option><option value="30">30 · Pro</option></select></div>
+            <div class="field"><label for="nFreq">Frecuencia</label><select id="nFreq"><option value="3">3 h</option><option value="6" selected>6 h</option><option value="12">12 h</option><option value="24">24 h</option></select></div>
+          </div>
+          <button class="primary" style="width:100%">Crear y obtener enlace</button>
+          <div id="newMsg"></div>
+        </form>
+      </aside>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+(() => {
+  const API = location.pathname.replace(/\/admin\/?$/, '/api');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let key = '';
+  try { key = sessionStorage.getItem('denoro_admin') || ''; } catch (e) { key = ''; }
+  let panelUrl = '';
+  const panelLink = (t) => `${panelUrl && !panelUrl.startsWith('__') ? panelUrl : location.origin + location.pathname.replace(/\/admin\/?$/, '/panel')}?t=${t}`;
+  function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3200); }
+  const msg = (id, text, kind = 'error') => { $(id).innerHTML = text ? `<p class="msg ${kind}">${text}</p>` : ''; };
+  async function api(accion, data = {}) {
+    try { const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_key: key, accion, ...data }) }); return await r.json(); }
+    catch (e) { return { ok: false, error: 'Sin conexión con n8n' }; }
+  }
+  const copy = async (text) => { try { await navigator.clipboard.writeText(text); toast('Enlace copiado'); } catch (e) { prompt('Copia el enlace:', text); } };
+  const ago = (iso) => iso ? new Date(iso).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'pendiente';
+
+  async function load() {
+    const r = await api('admin_listar');
+    if (!r.ok) { $('login').hidden = false; $('dash').hidden = true; $('logout').hidden = true; if (key) msg('loginMsg', esc(r.error)); return; }
+    try { sessionStorage.setItem('denoro_admin', key); } catch (e) {}
+    panelUrl = r.panel_url;
+    $('login').hidden = true; $('dash').hidden = false; $('logout').hidden = false;
+    const cs = r.clientes;
+    $('sClients').textContent = cs.filter((c) => c.activo).length;
+    $('sLinks').textContent = cs.reduce((a, c) => a + c.vigilancias, 0);
+    $('sErrors').textContent = cs.reduce((a, c) => a + c.errores, 0);
+    $('rows').innerHTML = cs.map((c) => `<tr>
+      <td><div class="name">${esc(c.nombre)}</div><div class="url">${esc(c.email || 'sin email')}${c.telegram_chat_id ? ' · Telegram' : ''}</div></td>
+      <td class="r num">${c.vigilancias}/${c.max_vigilancias}${c.errores ? `<div><span class="badge bad">${c.errores} con error</span></div>` : ''}</td>
+      <td class="hide-s"><span class="hint">${ago(c.ultima)} · cada ${c.frecuencia_horas} h</span></td>
+      <td>${c.activo ? '<span class="badge ok">Activo</span>' : '<span class="badge">Pausado</span>'}</td>
+      <td class="r" style="white-space:nowrap"><button class="icon-btn" data-copy="${esc(c.token)}">Copiar enlace</button>
+        <a class="btn icon-btn" href="${esc(panelLink(c.token))}" target="_blank" rel="noopener">Abrir</a>
+        <button class="ghost icon-btn" data-toggle="${esc(c.token)}" data-active="${c.activo}">${c.activo ? 'Pausar' : 'Activar'}</button></td></tr>`).join('')
+      || '<tr><td colspan="5" class="empty">Aún no hay clientes. Crea el primero a la derecha.</td></tr>';
+  }
+  $('loginForm').addEventListener('submit', (e) => { e.preventDefault(); key = $('key').value; load(); });
+  $('logout').addEventListener('click', () => { key = ''; try { sessionStorage.removeItem('denoro_admin'); } catch (e) {} load(); });
+  $('rows').addEventListener('click', async (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.copy) return copy(panelLink(b.dataset.copy));
+    if (b.dataset.toggle) { const r = await api('admin_actualizar', { token: b.dataset.toggle, activo: b.dataset.active !== 'true' }); toast(r.ok ? 'Actualizado' : r.error); load(); }
+  });
+  $('newForm').addEventListener('submit', async (e) => {
+    e.preventDefault(); msg('newMsg', '');
+    const r = await api('admin_crear', { nombre: $('nNombre').value, email: $('nEmail').value, telegram_chat_id: $('nChat').value, max_vigilancias: +$('nMax').value, frecuencia_horas: +$('nFreq').value });
+    if (!r.ok) return msg('newMsg', esc(r.error));
+    const link = panelLink(r.token);
+    msg('newMsg', `Cliente creado. Envíale este enlace:<br><a href="${esc(link)}" target="_blank" rel="noopener" style="word-break:break-all">${esc(link)}</a>`, 'okay');
+    copy(link); e.target.reset(); load();
+  });
+  if (key) load();
+})();
+</script>
+</body>
+</html>

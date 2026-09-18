@@ -1,0 +1,58 @@
+# Denoro · Monitor de precios — configuración
+# Copia este fichero a config.yaml y adáptalo a cada cliente.
+
+sources:
+  # Web HTML cualquiera: se definen los selectores CSS de cada dato.
+  # (books.toscrape.com es una web pública creada para practicar scraping)
+  - id: books-toscrape
+    type: css
+    url: https://books.toscrape.com/catalogue/page-1.html
+    currency: GBP
+    max_pages: 50
+    selectors:
+      item: article.product_pod
+      name: h3 a@title          # "selector@atributo" lee un atributo
+      link: h3 a@href
+      price: .price_color
+      stock: .availability
+      next: li.next a@href
+
+  # Tienda Shopify: solo hace falta la URL (usa su /products.json público).
+  # - id: competidor-shopify
+  #   type: shopify
+  #   url: https://tienda-competidor.com
+  #   collection: camisetas     # opcional: limitar a una colección
+  #   currency: EUR
+
+  # Tienda WooCommerce: usa la Store API pública.
+  # - id: competidor-woo
+  #   type: woocommerce
+  #   url: https://otra-tienda.es
+  #   category: 15              # opcional: id de categoría
+
+# Tus productos y con qué producto de cada competidor se comparan.
+# Avisa cuando un competidor vende más barato que tú (con una tolerancia opcional).
+my_products:
+  - name: A Light in the Attic (mi tienda)
+    my_price: 45.00
+    tolerance_pct: 2
+    competitors:
+      books-toscrape: https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html
+
+alerts:
+  min_change_pct: 1.0          # ignora cambios menores del 1 %
+  min_change_abs: 0.05         # ... o de menos de 5 céntimos
+  track_new: true
+  track_removed: true
+  notify_when_no_changes: false
+
+http:
+  delay_min: 1.0               # pausa entre peticiones al mismo dominio (segundos)
+  delay_max: 2.5
+  retries: 3
+  timeout: 20
+  respect_robots: true
+
+storage:
+  database: data/history.sqlite
+  export_dir: data

@@ -1,0 +1,28 @@
+[
+ {
+  "id": 10,
+  "name": "Taza Cerámica",
+  "sku": "TAZ-01",
+  "permalink": "https://tienda.es/p/taza",
+  "is_in_stock": true,
+  "prices": {
+   "price": "990",
+   "regular_price": "1290",
+   "currency_code": "EUR",
+   "currency_minor_unit": 2
+  }
+ },
+ {
+  "id": 11,
+  "name": "Gorra",
+  "sku": "",
+  "permalink": "https://tienda.es/p/gorra",
+  "is_in_stock": false,
+  "prices": {
+   "price": "1450",
+   "regular_price": "1450",
+   "currency_code": "EUR",
+   "currency_minor_unit": 2
+  }
+ }
+]

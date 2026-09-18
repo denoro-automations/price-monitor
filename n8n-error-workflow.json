@@ -1,0 +1,263 @@
+{
+  "name": "Denoro — Avisos de error",
+  "nodes": [
+    {
+      "id": "a815fa94-7500-5f61-b06c-c156f0780698",
+      "name": "Nota: avisos de error",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        -200
+      ],
+      "parameters": {
+        "content": "## Avisos de error · Denoro\nAsígnalo en *Settings → Error workflow* de cada workflow.\nRellena el chat de Telegram y el email en el nodo **Destinos** (vacío = canal desactivado).",
+        "width": 360,
+        "height": 180,
+        "color": 3
+      }
+    },
+    {
+      "id": "6349ad08-e32c-5342-a615-bd44fdacc017",
+      "name": "Cuando falle un workflow",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "26601022-8a70-5e72-aa05-5bc85d3102c1",
+      "name": "Formatear error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Formatea el error de cualquier workflow que tenga este como \"Error workflow\"\nconst e = $input.first().json;\nconst exec = e.execution || {};\nconst wf = e.workflow || {};\nconst err = exec.error || e.trigger?.error || {};\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst when = new Date().toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });\nconst node = exec.lastNodeExecuted || err.node?.name || 'desconocido';\nconst msg = (err.message || 'Error sin mensaje').slice(0, 500);\nconst text = `🚨 <b>Fallo en un workflow</b>\\n` +\n  `<b>Workflow:</b> ${esc(wf.name || wf.id || '¿?')}\\n` +\n  `<b>Nodo:</b> ${esc(node)}\\n` +\n  `<b>Error:</b> ${esc(msg)}\\n` +\n  `<b>Cuándo:</b> ${when}` + (exec.url ? `\\n<a href=\"${esc(exec.url)}\">Ver ejecución</a>` : '');\nconst html = `<div style=\"font-family:Arial,sans-serif;max-width:560px\">\n<h2 style=\"color:#b42318;margin:0 0 12px\">Fallo en «${esc(wf.name || wf.id)}»</h2>\n<p><b>Nodo:</b> ${esc(node)}<br><b>Error:</b> ${esc(msg)}<br><b>Cuándo:</b> ${when}</p>\n${exec.url ? `<p><a href=\"${esc(exec.url)}\">Abrir la ejecución en n8n</a></p>` : ''}\n${err.stack ? `<pre style=\"background:#f4f6f8;padding:12px;font-size:11px;white-space:pre-wrap\">${esc(String(err.stack).slice(0, 1500))}</pre>` : ''}\n</div>`;\nreturn [{ json: { telegram: text, asunto: `⚠️ Denoro · Error en ${wf.name || 'un workflow'}`, email_html: html } }];\n"
+      }
+    },
+    {
+      "id": "09e9a5f2-4d72-5ba6-86cb-9d3bf810e83f",
+      "name": "Destinos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1cc98cae-3526-5694-bf3e-2c2a77cf297c",
+              "name": "telegram_chat_id",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "4acb25cf-d0d6-5e1b-b82c-bb7093fdf3ce",
+              "name": "email_to",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "0742cc1a-3968-5f5a-8b7a-df227894b348",
+              "name": "email_from",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "93e7d4e1-5781-59c8-af22-a0a4c2649917",
+      "name": "¿Telegram activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1f43ecc1-b8b8-5160-9d2d-7d0a748787a5",
+              "leftValue": "={{ $json.telegram_chat_id !== '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8c1f0399-2abc-5399-ab8e-7341041df5f7",
+      "name": "¿Email activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        720,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b319bf17-3595-51f2-8aa5-61f3e3dac097",
+              "leftValue": "={{ $json.email_to !== '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "36cbbf4d-9c16-559f-944c-e954e407fd87",
+      "name": "Enviar a Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        960,
+        -100
+      ],
+      "parameters": {
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "text": "={{ $json.telegram }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "0359d3e7-09f0-57cf-bf62-75fddd9c0b7e",
+      "name": "Enviar email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        960,
+        100
+      ],
+      "parameters": {
+        "fromEmail": "={{ $json.email_from }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Cuando falle un workflow": {
+      "main": [
+        [
+          {
+            "node": "Formatear error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear error": {
+      "main": [
+        [
+          {
+            "node": "Destinos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Destinos": {
+      "main": [
+        [
+          {
+            "node": "¿Telegram activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Email activo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Telegram activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Email activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "Europe/Madrid"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

@@ -1,0 +1,37 @@
+{
+ "products": [
+  {
+   "id": 1,
+   "title": "Camiseta Orgánica",
+   "handle": "camiseta-organica",
+   "vendor": "Acme",
+   "product_type": "Camisetas",
+   "variants": [
+    {
+     "price": "24.90",
+     "compare_at_price": "29.90",
+     "available": true
+    },
+    {
+     "price": "26.90",
+     "compare_at_price": null,
+     "available": false
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "title": "Sudadera Capucha",
+   "handle": "sudadera-capucha",
+   "vendor": "Acme",
+   "product_type": "Sudaderas",
+   "variants": [
+    {
+     "price": "49.00",
+     "compare_at_price": null,
+     "available": false
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,237 @@
+{
+  "name": "Denoro — Solicitudes de la web",
+  "nodes": [
+    {
+      "id": "dda33421-f4d1-5c48-b206-b30a850425de",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        -280
+      ],
+      "parameters": {
+        "content": "## Denoro · Solicitudes de la web\nLa landing (GitHub Pages) envía aquí el formulario de presupuesto.\n1. Publica n8n en internet (túnel o servidor).\n2. Pon esa URL en `ENDPOINT` dentro de `app.js` de la web.\nSin eso, el formulario abre el correo del visitante (no se pierde ninguna solicitud).",
+        "width": 420,
+        "height": 200,
+        "color": 5
+      }
+    },
+    {
+      "id": "c6adb5a5-aae1-5f9b-9c34-20ed5bf1e2a8",
+      "name": "Solicitud de la web",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -200,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "denoro/contacto",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "b2ef5342-0654-55e2-9ed3-b8b9df99da0a"
+    },
+    {
+      "id": "a45a9119-85ac-54ff-816f-bb702e533ed5",
+      "name": "Preparar aviso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Solicitud de presupuesto enviada desde la web de Denoro\nconst raw = $('Solicitud de la web').first().json;\nconst body = typeof raw.body === 'string' ? JSON.parse(raw.body || '{}') : (raw.body || {});\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst clean = (s, n = 500) => String(s ?? '').trim().slice(0, n);\nconst emailOk = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(String(body.email || ''));\n\nif (body.empresa_web) return [{ json: { status: 200, respuesta: { ok: true } } }];   // bot\nif (!clean(body.nombre) || !emailOk || !clean(body.competidores)) {\n  return [{ json: { status: 400, enviar: false, respuesta: { ok: false, error: 'Faltan datos obligatorios' } } }];\n}\nconst d = {\n  nombre: clean(body.nombre, 100), email: clean(body.email, 120), tienda: clean(body.tienda, 200),\n  competidores: clean(body.competidores, 2000), productos: clean(body.productos, 40),\n  paquete: clean(body.paquete, 40), mensaje: clean(body.mensaje, 2000),\n  idioma: clean(body.idioma, 5), origen: clean(body.origen, 200),\n};\nconst enlaces = d.competidores.split(/[\\n,]+/).map((x) => x.trim()).filter(Boolean);\nconst telegram = `💰 <b>Nueva solicitud de presupuesto</b>\\n` +\n  `<b>${esc(d.nombre)}</b> · ${esc(d.email)}\\n` +\n  (d.tienda ? `Tienda: ${esc(d.tienda)}\\n` : '') +\n  `Paquete: ${esc(d.paquete || '—')} · Productos: ${esc(d.productos || '—')} · Idioma: ${esc(d.idioma || 'es')}\\n` +\n  `\\n<b>Webs a vigilar (${enlaces.length})</b>\\n` + enlaces.slice(0, 10).map((x) => '• ' + esc(x)).join('\\n') +\n  (d.mensaje ? `\\n\\n<b>Mensaje</b>\\n${esc(d.mensaje.slice(0, 600))}` : '');\nconst html = `<div style=\"font-family:Arial,sans-serif;max-width:620px;color:#1d2939\">\n<h2 style=\"color:#0f2a3d;margin:0 0 12px\">Nueva solicitud de presupuesto</h2>\n<p><b>${esc(d.nombre)}</b> · <a href=\"mailto:${esc(d.email)}\">${esc(d.email)}</a>${d.tienda ? ` · <a href=\"${esc(d.tienda)}\">${esc(d.tienda)}</a>` : ''}</p>\n<p>Paquete: <b>${esc(d.paquete || '—')}</b> · Productos: ${esc(d.productos || '—')} · Idioma: ${esc(d.idioma || 'es')}</p>\n<h3 style=\"font-size:15px;margin:18px 0 6px\">Webs a vigilar</h3>\n<ul>${enlaces.map((x) => `<li><a href=\"${esc(x)}\">${esc(x)}</a></li>`).join('')}</ul>\n${d.mensaje ? `<h3 style=\"font-size:15px;margin:18px 0 6px\">Mensaje</h3><p style=\"white-space:pre-wrap\">${esc(d.mensaje)}</p>` : ''}\n<p style=\"margin-top:18px;font-size:12px;color:#98a2b3\">Enviado desde ${esc(d.origen || 'la web')} el ${new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}</p></div>`;\nreturn [{ json: {\n  status: 200, enviar: true, ...d,\n  telegram, email_html: html, asunto: `💰 Presupuesto · ${d.nombre}${d.tienda ? ' (' + d.tienda + ')' : ''}`,\n  respuesta: { ok: true },\n} }];\n"
+      }
+    },
+    {
+      "id": "ff1d7385-b4e7-553f-88fc-0965c0b01ab0",
+      "name": "¿Válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "053478fd-ad69-53b1-8bd2-d340ffbe6423",
+              "leftValue": "={{ $json.enviar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2ca8f31e-30e4-5c4f-bb54-9aa62a899f0e",
+      "name": "Avisar por Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        -100
+      ],
+      "parameters": {
+        "chatId": "__TELEGRAM_CHAT__",
+        "text": "={{ $json.telegram }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "d9d867a4-90a1-5a49-8d20-33da4980fe98",
+      "name": "Enviarme el email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        700,
+        -100
+      ],
+      "parameters": {
+        "fromEmail": "__EMAIL_FROM__",
+        "toEmail": "__EMAIL_TO__",
+        "subject": "={{ $('Preparar aviso').first().json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $('Preparar aviso').first().json.email_html }}",
+        "options": {
+          "appendAttribution": false,
+          "replyTo": "={{ $('Preparar aviso').first().json.email }}"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "a20290e7-a8f0-506a-b0b4-d90a7fe9e8fb",
+      "name": "Responder a la web",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        940,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Preparar aviso').first().json.respuesta }}",
+        "options": {
+          "responseCode": "={{ $('Preparar aviso').first().json.status }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              },
+              {
+                "name": "X-Robots-Tag",
+                "value": "noindex"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Solicitud de la web": {
+      "main": [
+        [
+          {
+            "node": "Preparar aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar aviso": {
+      "main": [
+        [
+          {
+            "node": "¿Válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Válida?": {
+      "main": [
+        [
+          {
+            "node": "Avisar por Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder a la web",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar por Telegram": {
+      "main": [
+        [
+          {
+            "node": "Enviarme el email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviarme el email": {
+      "main": [
+        [
+          {
+            "node": "Responder a la web",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "Europe/Madrid"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

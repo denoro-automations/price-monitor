@@ -1,0 +1,473 @@
+{
+  "name": "Denoro SaaS — Revisar cliente",
+  "nodes": [
+    {
+      "id": "dda33421-f4d1-5c48-b206-b30a850425de",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        -300
+      ],
+      "parameters": {
+        "content": "## Denoro · Revisar un cliente\nLo llaman el *Planificador* y el botón **Revisar ahora** del panel.\nLee sus enlaces, compara con la revisión anterior, guarda el estado y avisa por Telegram/email.",
+        "width": 420,
+        "height": 180,
+        "color": 5
+      }
+    },
+    {
+      "id": "21eb6be9-0bd3-5ac5-ac8e-f52331087ca1",
+      "name": "Al revisar un cliente",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -200,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "c5061f75-36c1-50d9-9d0b-ecfb08a3f0d6",
+      "name": "Leer cliente",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        20,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__TABLE_CLIENTES__",
+          "cachedResultName": "denoro_clientes"
+        },
+        "returnAll": true,
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "token",
+              "condition": "eq",
+              "keyValue": "={{ $json.token }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "5b45a27e-554a-575c-b5ff-700099fef8fc",
+      "name": "Leer estado",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__TABLE_ESTADO__",
+          "cachedResultName": "denoro_estado"
+        },
+        "returnAll": true,
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "clave",
+              "condition": "like",
+              "keyValue": "={{ $('Al revisar un cliente').first().json.token + ':%' }}"
+            }
+          ]
+        }
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "43a6dae2-8b35-5b22-8987-f414a59b3057",
+      "name": "Revisar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// ============================================================================\n// Denoro · motor de vigilancia (se inyecta al principio de varios nodos Code)\n// Requiere: http(options) -> { statusCode, headers, body }  (this.helpers.httpRequest)\n// ============================================================================\nconst DENORO_UA = 'Mozilla/5.0 (compatible; DenoroPriceMonitor/3.0; +https://github.com/denoro-automations/price-monitor)';\nconst MAX_STORE_PAGES = 20;          // Shopify: 250 productos/página; Woo: 100\nconst MAX_PRODUCTS = 3000;\nconst POLITE_DELAY = 1200;         // pausa entre peticiones al mismo dominio (ms)\nconst RETRY_WAIT = 1500;\nconst sleep = (ms) => new Promise((r) => setTimeout(r, ms));\n\nfunction parsePrice(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number') return Number.isFinite(v) ? Math.round(v * 100) / 100 : null;\n  const m = String(v).match(/\\d[\\d.,\\s  ]*/);\n  if (!m) return null;\n  let raw = m[0].replace(/[\\s  ]/g, '').replace(/[.,]+$/, '');\n  if (raw.includes(',') && raw.includes('.')) {\n    raw = raw.lastIndexOf(',') > raw.lastIndexOf('.') ? raw.replace(/\\./g, '').replace(',', '.') : raw.replace(/,/g, '');\n  } else if (raw.includes(',')) {\n    const tail = raw.split(',').pop();\n    raw = tail.length <= 2 ? raw.replace(/,(?=[^,]*,)/g, '').replace(',', '.') : raw.replace(/,/g, '');\n  } else if ((raw.match(/\\./g) || []).length > 1 || (raw.includes('.') && raw.split('.').pop().length === 3)) {\n    raw = raw.replace(/\\./g, '');\n  }\n  const n = parseFloat(raw);\n  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;\n}\n\n// ---------- URLs (el sandbox de n8n no tiene URL()) ----------\nfunction splitUrl(input) {\n  let s = String(input || '').trim();\n  if (!s) return null;\n  if (!/^https?:\\/\\//i.test(s)) s = 'https://' + s;\n  const m = s.match(/^(https?):\\/\\/([^/?#\\s]+)([^?#\\s]*)(\\?[^#\\s]*)?/i);\n  if (!m) return null;\n  const host = m[2].toLowerCase();\n  if (!/^[a-z0-9.-]+(:\\d+)?$/.test(host) || !host.includes('.')) return null;\n  if (/^(localhost|127\\.|10\\.|192\\.168\\.|169\\.254\\.|0\\.)/.test(host) || /^172\\.(1[6-9]|2\\d|3[01])\\./.test(host)) return null;\n  const path = (m[3] || '/').replace(/\\/{2,}/g, '/');\n  return { origin: `${m[1].toLowerCase()}://${host}`, host: host.replace(/^www\\./, ''), path, query: m[4] || '', href: `${m[1].toLowerCase()}://${host}${path}${m[4] || ''}` };\n}\nfunction resolveUrl(href, base) {\n  if (!href) return base;\n  if (/^https?:\\/\\//i.test(href)) return href;\n  const b = splitUrl(base);\n  if (!b) return href;\n  if (href.startsWith('//')) return b.origin.split(':')[0] + ':' + href;\n  if (href.startsWith('/')) return b.origin + href;\n  const dir = b.path.replace(/[^/]*$/, '');\n  const clean = href.split(/[?#]/)[0];\n  const out = [];\n  for (const p of (dir + clean).split('/')) { if (p === '..') out.pop(); else if (p !== '.') out.push(p); }\n  return b.origin + out.join('/').replace(/^(?!\\/)/, '/') + href.slice(clean.length);\n}\n\n// ---------- HTTP educado ----------\nconst lastHit = {};\nconst robotsCache = {};\nasync function politeGet(http, url, { json = false, delayMs = POLITE_DELAY } = {}) {\n  delayMs = Math.min(delayMs, POLITE_DELAY);\n  const u = splitUrl(url);\n  if (!u) throw new Error(`URL no válida: ${url}`);\n  const wait = (lastHit[u.host] || 0) + delayMs - Date.now();\n  if (wait > 0) await sleep(wait);\n  lastHit[u.host] = Date.now();\n  let res;\n  for (let attempt = 1; attempt <= 3; attempt++) {\n    try {\n      res = await http({ url: u.href, method: 'GET', json, returnFullResponse: true, ignoreHttpStatusErrors: true, timeout: 20000,\n        headers: { 'User-Agent': DENORO_UA, 'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8', Accept: json ? 'application/json' : 'text/html,application/xhtml+xml' } });\n    } catch (e) {\n      const permanent = /redirect|ENOTFOUND|certificate|EAI_AGAIN|Invalid URL/i.test(e.message || '');\n      if (attempt === 3 || permanent) throw new Error(`No se pudo conectar con ${u.host}: ${e.message}`);\n      await sleep(RETRY_WAIT * attempt);\n      continue;\n    }\n    if ([429, 500, 502, 503, 504].includes(res.statusCode) && attempt < 3) { await sleep(RETRY_WAIT * attempt); continue; }\n    break;\n  }\n  let body = res.body;\n  if (json && typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = null; } }\n  if (!json && body && typeof body !== 'string') body = typeof body === 'object' ? JSON.stringify(body) : String(body);\n  return { status: res.statusCode, body, headers: res.headers || {} };\n}\nasync function robotsAllows(http, url) {\n  const u = splitUrl(url);\n  if (!(u.origin in robotsCache)) {\n    let rules = [];\n    try {\n      const r = await politeGet(http, u.origin + '/robots.txt', { delayMs: 0 });\n      if (r.status === 200 && typeof r.body === 'string') {\n        let applies = false;\n        for (const line of r.body.split(/\\r?\\n/)) {\n          const [k, ...rest] = line.split(':');\n          const key = (k || '').trim().toLowerCase(); const val = rest.join(':').split('#')[0].trim();\n          if (key === 'user-agent') applies = val === '*' || /denoro/i.test(val);\n          else if (applies && key === 'disallow' && val) rules.push({ allow: false, path: val });\n          else if (applies && key === 'allow' && val) rules.push({ allow: true, path: val });\n        }\n      }\n    } catch (e) { rules = []; }\n    robotsCache[u.origin] = rules;\n  }\n  const target = u.path + u.query;\n  let best = null;\n  for (const r of robotsCache[u.origin]) {\n    const re = new RegExp('^' + r.path.replace(/[.+?^${}()|[\\]\\\\]/g, '\\\\$&').replace(/\\*/g, '.*').replace(/\\\\\\$$/, '$'));\n    if (re.test(target) && (!best || r.path.length > best.path.length)) best = r;\n  }\n  return !best || best.allow;\n}\n\n// ---------- extracción ----------\nconst OUT_WORDS = /outofstock|soldout|discontinued|out of stock|agotado|sin stock|no disponible/i;\nfunction jsonLdProducts(html) {\n  const found = [];\n  const re = /<script[^>]*type\\s*=\\s*[\"']?application\\/ld\\+json[\"']?[^>]*>([\\s\\S]*?)<\\/script>/gi;\n  let m;\n  const visit = (node) => {\n    if (!node || typeof node !== 'object') return;\n    if (Array.isArray(node)) { node.forEach(visit); return; }\n    const types = [].concat(node['@type'] || []).map(String);\n    if (types.some((t) => /^(Product|ProductGroup|IndividualProduct)$/i.test(t))) found.push(node);\n    if (node['@graph']) visit(node['@graph']);\n    if (node.mainEntity) visit(node.mainEntity);\n  };\n  while ((m = re.exec(html)) !== null) {\n    const txt = m[1].trim().replace(/^<!--|-->$/g, '');\n    try { visit(JSON.parse(txt)); } catch (e) { /* JSON-LD roto: se ignora */ }\n  }\n  return found;\n}\nfunction offerInfo(offers) {\n  const list = [].concat(offers || []).flatMap((o) => (o && o['@type'] === 'AggregateOffer' && o.offers ? [o, ...[].concat(o.offers)] : [o])).filter(Boolean);\n  let price = null, currency = '', stock = null, regular = null;\n  for (const o of list) {\n    const specs = [].concat(o.priceSpecification || []);\n    const p = parsePrice(o.price ?? o.lowPrice ?? specs.find((s) => s && s.price !== undefined)?.price);\n    if (p !== null && (price === null || p < price)) { price = p; currency = o.priceCurrency || specs[0]?.priceCurrency || currency; }\n    const strike = specs.find((s) => /StrikethroughPrice|ListPrice/i.test(String(s?.priceType || '')));\n    if (strike) regular = parsePrice(strike.price);\n    if (o.availability) {\n      const inS = !OUT_WORDS.test(String(o.availability));\n      stock = stock === true ? true : inS;\n    }\n  }\n  return { price, currency, stock, regular };\n}\nfunction metaContent(html, names) {\n  for (const n of names) {\n    const re = new RegExp(`<meta[^>]+(?:property|name|itemprop)\\\\s*=\\\\s*[\"']${n}[\"'][^>]*>`, 'i');\n    const tag = html.match(re);\n    if (tag) { const c = tag[0].match(/content\\s*=\\s*[\"']([^\"']*)[\"']/i); if (c) return c[1]; }\n  }\n  return null;\n}\nconst decode = (s) => String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#0?39;|&apos;/g, \"'\").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#(\\d+);/g, (_, d) => String.fromCharCode(+d)).trim();\n\nfunction productFromHtml(html, url) {\n  const lds = jsonLdProducts(html);\n  for (const p of lds) {\n    let info = offerInfo(p.offers);\n    if (info.price === null && p.hasVariant) {\n      const vs = [].concat(p.hasVariant).map((v) => offerInfo(v.offers)).filter((x) => x.price !== null);\n      if (vs.length) info = { ...vs.reduce((a, b) => (b.price < a.price ? b : a)), stock: vs.some((x) => x.stock !== false) };\n    }\n    if (info.price !== null) {\n      return { key: p.sku ? String(p.sku) : url, name: decode(p.name) || url, price: info.price, regular: info.regular && info.regular > info.price ? info.regular : null,\n               currency: info.currency || '', stock: info.stock, url, image: [].concat(p.image || [])[0]?.url || [].concat(p.image || [])[0] || '', via: 'json-ld' };\n    }\n  }\n  const price = parsePrice(metaContent(html, ['product:price:amount', 'og:price:amount', 'price']));\n  if (price !== null) {\n    const avail = metaContent(html, ['product:availability', 'og:availability', 'availability']);\n    return { key: url, name: decode(metaContent(html, ['og:title', 'twitter:title']) || (html.match(/<title>([^<]*)/i) || [])[1] || url), price, regular: null,\n             currency: metaContent(html, ['product:price:currency', 'og:price:currency', 'priceCurrency']) || '',\n             stock: avail ? !OUT_WORDS.test(avail) : null, url, image: metaContent(html, ['og:image']) || '', via: 'meta' };\n  }\n  // microdatos: itemprop=\"price\"\n  const micro = html.match(/itemprop\\s*=\\s*[\"']price[\"'][^>]*?(?:content\\s*=\\s*[\"']([^\"']+)[\"'])?[^>]*>([^<]{0,40})/i);\n  if (micro && parsePrice(micro[1] || micro[2]) !== null) {\n    const cur = (html.match(/itemprop\\s*=\\s*[\"']priceCurrency[\"'][^>]*content\\s*=\\s*[\"']([A-Z]{3})/i) || [])[1] || '';\n    const av = (html.match(/itemprop\\s*=\\s*[\"']availability[\"'][^>]*(?:href|content)\\s*=\\s*[\"']([^\"']+)/i) || [])[1];\n    return { key: url, name: stripTags((html.match(/<h1[^>]*>([\\s\\S]*?)<\\/h1>/i) || [])[1]) || decode(metaContent(html, ['og:title'])) || url,\n             price: parsePrice(micro[1] || micro[2]), regular: null, currency: cur, stock: av ? !OUT_WORDS.test(av) : null, url,\n             image: metaContent(html, ['og:image']) || '', via: 'microdata' };\n  }\n  // aproximación: un único precio visible en elementos con clase \"price\" y un único <h1>\n  const h1s = html.match(/<h1[^>]*>([\\s\\S]*?)<\\/h1>/gi) || [];\n  if (h1s.length === 1) {\n    const vals = [];\n    const re = /<(?:p|span|div|strong|ins|bdi)[^>]*class\\s*=\\s*[\"'][^\"']*\\bprice[\\w-]*\\b[^\"']*[\"'][^>]*>([\\s\\S]{0,120}?)<\\/(?:p|span|div|strong|ins|bdi)>/gi;\n    let m;\n    while ((m = re.exec(html)) !== null) {\n      const txt = stripTags(m[1]);\n      if (/[€$£]|EUR|USD|GBP/.test(txt)) { const v = parsePrice(txt); if (v !== null) vals.push({ v, cur: /€|EUR/.test(txt) ? 'EUR' : /£|GBP/.test(txt) ? 'GBP' : 'USD' }); }\n    }\n    const distinct = [...new Set(vals.map((x) => x.v))];\n    if (distinct.length === 1) {\n      const stockTxt = stripTags((html.match(/<[^>]+class\\s*=\\s*[\"'][^\"']*(?:availability|stock)[^\"']*[\"'][^>]*>([\\s\\S]{0,300}?)<\\/(?:p|span|div|td|li)>/i) || [])[1] || '');\n      return { key: url, name: stripTags(h1s[0]), price: distinct[0], regular: null, currency: vals[0].cur,\n               stock: stockTxt ? !OUT_WORDS.test(stockTxt) : null, url, image: metaContent(html, ['og:image']) || '', via: 'aproximado' };\n    }\n  }\n  return null;\n}\nconst stripTags = (s) => decode(String(s || '').replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' '));\n\nfunction shopifyProducts(data, origin, currency) {\n  return (data && data.products || []).map((p) => {\n    const vs = p.variants && p.variants.length ? p.variants : [{}];\n    const prices = vs.map((v) => parsePrice(v.price)).filter((x) => x !== null);\n    const compare = vs.map((v) => parsePrice(v.compare_at_price)).filter((x) => x !== null);\n    const price = prices.length ? Math.min(...prices) : null;\n    const regular = compare.length ? Math.max(...compare) : null;\n    return { key: p.handle || String(p.id), name: String(p.title || '').trim(), price, regular: regular && price && regular > price ? regular : null,\n             currency, stock: vs.some((v) => v.available === true), url: `${origin}/products/${p.handle}`,\n             image: (p.images && p.images[0] && p.images[0].src) || '' };\n  }).filter((p) => p.name);\n}\nfunction shopifyProductJs(p, origin, currency) {\n  // /products/<handle>.js : precios en céntimos\n  const vs = p.variants || [];\n  const cents = (x) => (x === null || x === undefined ? null : Math.round(Number(x)) / 100);\n  const prices = vs.map((v) => cents(v.price)).filter((x) => x !== null);\n  const price = prices.length ? Math.min(...prices) : cents(p.price);\n  const compare = vs.map((v) => cents(v.compare_at_price)).filter((x) => x);\n  const regular = compare.length ? Math.max(...compare) : null;\n  return { key: p.handle, name: p.title, price, regular: regular && price && regular > price ? regular : null, currency,\n           stock: p.available === true || vs.some((v) => v.available), url: `${origin}/products/${p.handle}`,\n           image: (p.featured_image && String(p.featured_image).replace(/^\\/\\//, 'https://')) || '', via: 'shopify' };\n}\nfunction wooProducts(items) {\n  return (Array.isArray(items) ? items : []).map((p) => {\n    const pr = p.prices || {};\n    const unit = Number(pr.currency_minor_unit ?? 2);\n    const conv = (x) => (x === undefined || x === null || x === '' ? null : Math.round(Number(x)) / 10 ** unit);\n    const price = conv(pr.price), regular = conv(pr.regular_price);\n    return { key: p.sku || String(p.id), name: decode(p.name), price, regular: regular && price && regular > price ? regular : null,\n             currency: pr.currency_code || '', stock: p.is_in_stock, url: p.permalink || '', image: (p.images && p.images[0] && p.images[0].src) || '' };\n  }).filter((p) => p.name);\n}\n\n// ---------- detección ----------\n// Devuelve { tipo, url, nombre, moneda, productos:[muestra], total, aviso? }\nasync function tryGet(http, url, opts) {\n  try { return await politeGet(http, url, opts); } catch (e) { return { status: 0, body: null, headers: {}, error: e.message }; }\n}\nasync function detectWatch(http, rawUrl) {\n  const u = splitUrl(rawUrl);\n  if (!u) return { ok: false, error: 'La dirección no es válida. Copia el enlace completo de la tienda o del producto.' };\n  if (!(await robotsAllows(http, u.href))) return { ok: false, error: `${u.host} no permite la lectura automática de esa página (robots.txt).` };\n  const unreachable = (r) => r.status === 0 && /redirect|ENOTFOUND|ECONNREFUSED|certificate|EAI_AGAIN/i.test(r.error || '');\n  const cantOpen = (r) => ({ ok: false, error: `No he podido abrir ${u.host} (${String(r.error).replace(/^No se pudo conectar con [^:]+: /, '')}). Comprueba el enlace o prueba con otro producto.` });\n  const shopHandle = (u.path.match(/\\/products\\/([^/?#.]+)/) || [])[1];\n  const collection = (u.path.match(/\\/collections\\/([^/?#]+)/) || [])[1];\n\n  // 1) Producto de Shopify (algunas tiendas usan prefijo de idioma: /es/products/...)\n  if (shopHandle) {\n    const prefix = u.path.slice(0, u.path.indexOf('/products/'));\n    for (const pre of [...new Set([prefix, ''])]) {\n      const r = await tryGet(http, `${u.origin}${pre}/products/${shopHandle}.js`, { json: true, delayMs: 300 });\n      if (unreachable(r)) return cantOpen(r);\n      if (r.status === 200 && r.body && r.body.handle) {\n        const cur = await shopifyCurrency(http, u.origin);\n        const p = shopifyProductJs(r.body, u.origin + pre, cur);\n        return { ok: true, tipo: 'shopify_producto', url: p.url, nombre: p.name, moneda: cur, total: 1, productos: [p] };\n      }\n    }\n  }\n  // 2) Tienda o colección de Shopify\n  // se considera \"toda la tienda\" la home, con o sin prefijo de idioma (/es, /es-es), y las colecciones\n  const isHome = /^(\\/[a-z]{2}(-[a-z]{2})?)?(\\/(collections(\\/[^/]+)?|shop|tienda|store))?\\/?$/i.test(u.path);\n  if (isHome || collection) {\n    let locale = (u.path.match(/^\\/[a-z]{2}(?:-[a-z]{2})?(?=\\/|$)/i) || [''])[0];\n    let base = collection && collection !== 'all' ? `${u.origin}${locale}/collections/${collection}` : u.origin + locale;\n    let r = await tryGet(http, `${base}/products.json?limit=250&page=1`, { json: true, delayMs: 300 });\n    if (unreachable(r)) return cantOpen(r);\n    if (r.status !== 200 && locale) {           // la tienda no usa ese prefijo de idioma\n      const alt = await tryGet(http, `${u.origin}/products.json?limit=250&page=1`, { json: true, delayMs: 300 });\n      if (alt.status === 200) { r = alt; locale = ''; base = u.origin; }\n    }\n    if (r.status === 200 && r.body && Array.isArray(r.body.products)) {\n      const cur = await shopifyCurrency(http, u.origin);\n      const list = shopifyProducts(r.body, u.origin + locale, cur);\n      return { ok: true, tipo: 'shopify_tienda', url: collection ? `${u.origin}${locale}/collections/${collection}` : u.origin + locale,\n               nombre: collection ? `${u.host} · ${collection}` : u.host, moneda: cur,\n               total: list.length >= 250 ? '250+' : list.length, productos: list.slice(0, 6) };\n    }\n    // 3) Tienda WooCommerce\n    const w = await tryGet(http, `${u.origin}/wp-json/wc/store/v1/products?per_page=100&page=1`, { json: true, delayMs: 300 });\n    if (w.status === 200 && Array.isArray(w.body)) {\n      const list = wooProducts(w.body);\n      const total = Number(w.headers['x-wp-total'] || list.length);\n      return { ok: true, tipo: 'woo_tienda', url: u.origin, nombre: u.host, moneda: list[0]?.currency || '',\n               total, productos: list.slice(0, 6) };\n    }\n    if (isHome) return { ok: false, error: `No he podido leer el catálogo completo de ${u.host} (no es Shopify ni WooCommerce, o lo tiene bloqueado). Pega enlaces de productos concretos: esos funcionan en casi cualquier tienda.` };\n  }\n  // 4) Página de producto de cualquier web (JSON-LD / metadatos estándar)\n  const page = await tryGet(http, u.href, { delayMs: 300 });\n  if (page.status === 0) return cantOpen(page);\n  if (page.status === 401 || page.status === 403 || page.status === 429) return { ok: false, error: `${u.host} bloquea las consultas automáticas (error ${page.status}). Esta tienda no se puede vigilar de momento.` };\n  if (page.status >= 400) return { ok: false, error: `${u.host} respondió con error ${page.status}. ¿El enlace es correcto y público?` };\n  const p = productFromHtml(page.body || '', u.href);\n  if (p) return { ok: true, tipo: 'producto', url: u.href, nombre: p.name, moneda: p.currency, total: 1, productos: [p],\n                  ...(p.via === 'aproximado' ? { aviso: 'Hemos encontrado el precio por aproximación: comprueba que coincide con el de la web.' } : {}) };\n  // ¿Es una página de producto WooCommerce sin datos estructurados?\n  const slug = (u.path.match(/\\/(?:product|producto)\\/([^/]+)/) || [])[1];\n  if (slug) {\n    const w = await tryGet(http, `${u.origin}/wp-json/wc/store/v1/products?slug=${encodeURIComponent(slug)}`, { json: true, delayMs: 300 });\n    const list = wooProducts(w.status === 200 ? w.body : []);\n    if (list.length) return { ok: true, tipo: 'woo_producto', url: u.href, nombre: list[0].name, moneda: list[0].currency, total: 1, productos: [list[0]], slug };\n  }\n  return { ok: false, error: `No encuentro el precio en esa página de ${u.host}. Prueba con el enlace de un producto concreto (no de una categoría o búsqueda).` };\n}\n\nconst currencyCache = {};\nasync function shopifyCurrency(http, origin) {\n  if (origin in currencyCache) return currencyCache[origin];\n  let cur = '';\n  try {\n    const r = await politeGet(http, `${origin}/cart.js`, { json: true, delayMs: 300 });\n    if (r.status === 200 && r.body && r.body.currency) cur = r.body.currency;\n  } catch (e) { cur = ''; }\n  currencyCache[origin] = cur;\n  return cur;\n}\n\n// ---------- lectura completa de una vigilancia ----------\nasync function fetchWatch(http, w) {\n  const u = splitUrl(w.url);\n  if (!u) throw new Error('URL no válida');\n  if (!(await robotsAllows(http, u.href))) throw new Error('robots.txt no permite leer esta página');\n  if (w.tipo === 'shopify_tienda') {\n    const locale = (u.path.match(/^\\/[a-z]{2}(?:-[a-z]{2})?(?=\\/|$)/i) || [''])[0];\n    const base = locale + (u.path.match(/\\/collections\\/[^/]+/) || [''])[0];\n    const cur = w.moneda || await shopifyCurrency(http, u.origin);\n    const all = [];\n    for (let page = 1; page <= MAX_STORE_PAGES && all.length < MAX_PRODUCTS; page++) {\n      const r = await politeGet(http, `${u.origin}${base}/products.json?limit=250&page=${page}`, { json: true });\n      if (r.status !== 200 || !r.body || !Array.isArray(r.body.products)) {\n        if (page === 1) throw new Error(`la tienda respondió ${r.status}`);\n        break;\n      }\n      const batch = shopifyProducts(r.body, u.origin, cur);\n      all.push(...batch);\n      if (batch.length < 250) break;\n    }\n    return { productos: all, completo: true };\n  }\n  if (w.tipo === 'woo_tienda') {\n    const all = [];\n    for (let page = 1; page <= MAX_STORE_PAGES * 3 && all.length < MAX_PRODUCTS; page++) {\n      const r = await politeGet(http, `${u.origin}/wp-json/wc/store/v1/products?per_page=100&page=${page}`, { json: true });\n      if (r.status !== 200 || !Array.isArray(r.body)) {\n        if (page === 1) throw new Error(`la tienda respondió ${r.status}`);\n        break;\n      }\n      const batch = wooProducts(r.body);\n      all.push(...batch);\n      if (batch.length < 100) break;\n    }\n    return { productos: all, completo: true };\n  }\n  if (w.tipo === 'shopify_producto') {\n    const handle = (u.path.match(/\\/products\\/([^/?#.]+)/) || [])[1];\n    const pre = u.path.slice(0, u.path.indexOf('/products/'));\n    const r = await politeGet(http, `${u.origin}${pre}/products/${handle}.js`, { json: true });\n    if (r.status === 404) return { productos: [], completo: true, retirado: true };\n    if (r.status !== 200 || !r.body || !r.body.handle) throw new Error(`la tienda respondió ${r.status}`);\n    return { productos: [shopifyProductJs(r.body, u.origin + pre, w.moneda || await shopifyCurrency(http, u.origin))], completo: true };\n  }\n  if (w.tipo === 'woo_producto') {\n    const r = await politeGet(http, `${u.origin}/wp-json/wc/store/v1/products?slug=${encodeURIComponent(w.slug || '')}`, { json: true });\n    if (r.status !== 200) throw new Error(`la tienda respondió ${r.status}`);\n    const list = wooProducts(r.body);\n    return { productos: list.slice(0, 1), completo: true, retirado: !list.length };\n  }\n  // producto genérico\n  const r = await politeGet(http, u.href);\n  if (r.status === 404 || r.status === 410) return { productos: [], completo: true, retirado: true };\n  if (r.status >= 400) throw new Error(`la web respondió ${r.status}`);\n  const p = productFromHtml(r.body || '', u.href);\n  if (!p) throw new Error('no se encuentra el precio en la página (¿ha cambiado la web?)');\n  p.key = u.href;                      // clave estable = URL vigilada\n  return { productos: [p], completo: true };\n}\n\n// ---------- comparación ----------\nfunction compareSnapshots(current, prev, opts) {\n  const events = [];\n  if (!prev) return events;\n  const seen = new Set();\n  for (const p of current) {\n    seen.add(p.key);\n    const o = prev[p.key];\n    if (!o) { if (opts.avisar_nuevos) events.push({ kind: 'new_product', p }); continue; }\n    if (p.price !== null && o.p) {\n      const pct = Math.round(((p.price - o.p) / o.p) * 10000) / 100;\n      if (Math.abs(p.price - o.p) >= 0.01 && Math.abs(pct) >= (opts.umbral_pct || 0)) {\n        events.push({ kind: p.price < o.p ? 'price_drop' : 'price_rise', p, old: o.p, pct });\n      }\n    }\n    if (opts.avisar_stock !== false) {\n      if (o.s === true && p.stock === false) events.push({ kind: 'out_of_stock', p });\n      if (o.s === false && p.stock === true) events.push({ kind: 'back_in_stock', p });\n    }\n  }\n  if (opts.avisar_retirados && !opts.parcial) {\n    for (const [key, o] of Object.entries(prev)) {\n      if (!seen.has(key)) events.push({ kind: 'removed_product', p: { key, name: o.n, price: o.p, url: o.u, currency: opts.moneda || '' } });\n    }\n  }\n  return events;\n}\nconst snapshotOf = (list) => Object.fromEntries(list.map((p) => [p.key, { n: p.name, p: p.price, s: p.stock, u: p.url }]));\n\nfunction newToken() {\n  let t = '';\n  for (let i = 0; i < 4; i++) t += Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');\n  return t;\n}\nfunction newId() { return Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36); }\n// ============================ fin del motor ================================\n\n// ---------- mensajes (Telegram + email + CSV) ----------\nconst LABELS = {\n  undercut: ['Te están ganando en precio', '🔻'], price_drop: ['Bajadas de precio', '📉'],\n  out_of_stock: ['Se han quedado sin stock', '⛔'], back_in_stock: ['Vuelven a tener stock', '✅'],\n  price_rise: ['Subidas de precio', '📈'], new_product: ['Productos nuevos', '🆕'],\n  removed_product: ['Productos retirados', '🗑️'],\n};\nconst ORDER = Object.keys(LABELS);\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst nf = (v, d = 2) => {\n  const [int, dec] = Math.abs(Number(v || 0)).toFixed(d).split('.');\n  return (Number(v) < 0 ? '-' : '') + int.replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.') + (dec ? ',' + dec : '');\n};\nconst money = (v, cur) => (v === null || v === undefined ? '—' : nf(v) + ({ EUR: ' €', USD: ' $', GBP: ' £' }[cur] ?? (cur ? ' ' + cur : '')));\nconst pctFmt = (v) => (v > 0 ? '+' : '') + nf(v, 1) + ' %';\nconst plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;\n\nfunction buildMessages({ cliente, events, errors, stats, demo = false, bienvenida = null, fecha = new Date() }) {\n  const count = (k) => events.filter((e) => e.kind === k).length;\n  const line = (e) => {\n    const p = e.p;\n    const where = e.watch ? ` · ${e.watch}` : '';\n    if (e.kind === 'undercut') return `${p.name}${where}: ${money(p.price, p.currency)} vs tu ${money(e.mine, p.currency)} (${pctFmt(e.pct)})`;\n    if (e.old !== undefined) return `${p.name}${where}: ${money(e.old, p.currency)} → ${money(p.price, p.currency)} (${pctFmt(e.pct)})`;\n    return `${p.name}${where} — ${money(p.price, p.currency)}`;\n  };\n  let tg = `<b>Denoro · ${esc(cliente.nombre)}</b>\\n`;\n  if (bienvenida) {\n    tg += `✅ Vigilancia activada: ${plural(bienvenida.productos, 'producto', 'productos')} en ${plural(bienvenida.webs, 'enlace', 'enlaces')}.\\nTe avisaré aquí cuando cambie algo importante.`;\n  } else {\n    tg += `${plural(stats.productos, 'producto revisado', 'productos revisados')} · ${plural(events.length, 'cambio', 'cambios')}`;\n    for (const kind of ORDER) {\n      const group = events.filter((e) => e.kind === kind);\n      if (!group.length) continue;\n      tg += `\\n\\n${LABELS[kind][1]} <b>${LABELS[kind][0]}</b> (${group.length})\\n` + group.slice(0, 8).map((e) => '• ' + esc(line(e))).join('\\n');\n      if (group.length > 8) tg += `\\n… y ${group.length - 8} más (ver email)`;\n    }\n  }\n  if (errors.length) tg += '\\n\\n⚠️ <b>No he podido revisar</b>\\n' + errors.map((x) => '• ' + esc(x)).join('\\n');\n  if (tg.length > 4000) tg = tg.slice(0, 3990) + '\\n…';\n\n  const td = 'padding:8px;border-bottom:1px solid #e6eaee;font-size:14px';\n  const tiles = [[stats.productos, 'productos vigilados'], [count('price_drop') + count('undercut'), 'bajadas / te ganan'],\n                 [count('out_of_stock'), 'sin stock'], [events.length, 'cambios']]\n    .map(([v, l]) => `<td width=\"25%\" style=\"padding:6px\"><div style=\"background:#f4f6f8;border-radius:10px;padding:12px;text-align:center\"><div style=\"font-size:22px;font-weight:700;color:#0f2a3d\">${v}</div><div style=\"font-size:12px;color:#5b6b7a\">${l}</div></div></td>`).join('');\n  let sections = '';\n  for (const kind of ORDER) {\n    const group = events.filter((e) => e.kind === kind);\n    if (!group.length) continue;\n    const rows = group.slice(0, 150).map((e) => {\n      const before = e.mine ?? e.old;\n      return `<tr><td style=\"${td}\"><a href=\"${esc(e.p.url)}\" style=\"color:#0f2a3d\">${esc(e.p.name)}</a><div style=\"font-size:12px;color:#5b6b7a\">${esc(e.watch || '')}</div></td>` +\n        `<td style=\"${td};text-align:right;color:#5b6b7a\">${before === undefined ? '' : money(before, e.p.currency)}</td>` +\n        `<td style=\"${td};text-align:right;font-weight:600\">${money(e.p.price, e.p.currency)}</td>` +\n        `<td style=\"${td};text-align:right;color:${(e.pct || 0) < 0 ? '#b42318' : '#067647'}\">${e.pct === undefined ? '' : pctFmt(e.pct)}</td></tr>`;\n    }).join('');\n    sections += `<h3 style=\"margin:24px 0 8px;font-size:16px;color:#0f2a3d\">${LABELS[kind][1]} ${LABELS[kind][0]} (${group.length})</h3>` +\n      `<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr style=\"color:#5b6b7a;font-size:12px;text-align:left\"><th style=\"padding:6px 8px\">Producto</th><th style=\"padding:6px 8px;text-align:right\">Antes / tu precio</th><th style=\"padding:6px 8px;text-align:right\">Ahora</th><th style=\"padding:6px 8px;text-align:right\">Cambio</th></tr>${rows}</table>`;\n  }\n  const errorBox = errors.length ? `<p style=\"margin-top:24px;padding:12px;background:#fef3f2;border-radius:8px;color:#b42318\"><b>No he podido revisar:</b><br>${errors.map(esc).join('<br>')}</p>` : '';\n  const fechaTxt = fecha.toLocaleString('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'full', timeStyle: 'short' });\n  const intro = bienvenida\n    ? `<p style=\"font-size:15px\">✅ Ya estamos vigilando <b>${plural(bienvenida.productos, 'producto', 'productos')}</b> en ${plural(bienvenida.webs, 'enlace', 'enlaces')}. A partir de ahora recibirás un aviso cuando cambie algo importante.</p>`\n    : `<table width=\"100%\" cellspacing=\"0\" style=\"margin-top:12px\"><tr>${tiles}</tr></table>${sections || '<p style=\"color:#5b6b7a\">Sin cambios desde la última revisión.</p>'}`;\n  const html = `<!doctype html><html><body style=\"margin:0;background:#eef1f4;font-family:Arial,Helvetica,sans-serif;color:#1d2939\">\n<table width=\"100%\" cellspacing=\"0\"><tr><td align=\"center\" style=\"padding:24px\">\n<table width=\"640\" cellspacing=\"0\" style=\"background:#fff;border-radius:12px\"><tr><td style=\"padding:28px\">\n<div style=\"font-size:12px;letter-spacing:.08em;color:#5b6b7a;text-transform:uppercase\">Denoro · Monitor de precios</div>\n<h2 style=\"margin:4px 0;font-size:22px;color:#0f2a3d\">${esc(cliente.nombre)}</h2>\n<div style=\"color:#5b6b7a;font-size:13px\">${esc(fechaTxt)}${demo ? ' · <b>prueba</b>' : ''}</div>\n${intro}${errorBox}\n<p style=\"margin-top:28px;font-size:12px;color:#98a2b3\">Puedes cambiar qué vigilas desde tu panel de Denoro.${stats.productos ? ' Adjunto: precios actuales (CSV).' : ''}</p>\n</td></tr></table></td></tr></table></body></html>`;\n  const asunto = bienvenida ? `✅ Denoro · Vigilancia activada (${plural(bienvenida.productos, 'producto', 'productos')})`\n    : events.length ? `Denoro · ${plural(events.length, 'cambio', 'cambios')} en tu competencia`\n    : `⚠️ Denoro · No he podido revisar ${plural(errors.length, 'enlace', 'enlaces')}`;\n  return { telegram: tg, email_html: html, asunto };\n}\n\nfunction csvOf(products, fecha) {\n  const cell = (v) => { const s = v === null || v === undefined ? '' : String(v); return /[\";\\n]/.test(s) ? `\"${s.replace(/\"/g, '\"\"')}\"` : s; };\n  const num = (v) => (v === null || v === undefined ? '' : String(v).replace('.', ','));\n  return '﻿' + [['fecha', 'vigilancia', 'producto', 'precio', 'precio_sin_rebaja', 'moneda', 'en_stock', 'url'].join(';')]\n    .concat(products.map((p) => [fecha.toISOString(), p.watch, p.name, num(p.price), num(p.regular), p.currency, p.stock === null || p.stock === undefined ? '' : p.stock ? 'sí' : 'no', p.url].map(cell).join(';')))\n    .join('\\n');\n}\n\n// Revisa TODAS las vigilancias de un cliente, compara con la revisión anterior y prepara:\n//  - una fila de estado por vigilancia (tabla denoro_estado)\n//  - un aviso (Telegram/email) si hay cambios o errores nuevos\nconst http = (o) => this.helpers.httpRequest(o);\nconst EMAIL_FROM = '__EMAIL_FROM__';\nconst clienteRow = $('Leer cliente').all().map((i) => i.json).find((r) => r && r.token);\nconst input = $('Al revisar un cliente').first().json;\nif (!clienteRow) return [{ json: { tipo: 'fin', ok: false, error: `cliente ${input.token} no encontrado` } }];\nconst estados = Object.fromEntries($('Leer estado').all().map((i) => i.json).filter((r) => r && r.clave).map((r) => [r.clave, r]));\nconst parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch (e) { return d; } };\nconst cfg = parse(clienteRow.config, {});\nconst watches = cfg.vigilancias || [];\nconst opts = { umbral_pct: cfg.umbral_pct ?? 1, avisar_nuevos: cfg.avisar_nuevos ?? true, avisar_retirados: cfg.avisar_retirados ?? true, avisar_stock: cfg.avisar_stock ?? true };\nconst now = new Date();\nconst out = [];\nconst events = [];\nconst errors = [];\nconst allProducts = [];\nlet nuevosBaseline = 0, productosBaseline = 0;\n\nfor (const w of watches) {\n  const clave = `${clienteRow.token}:${w.id}`;\n  const prevRow = estados[clave];\n  const prev = prevRow ? parse(prevRow.snapshot, null) : null;\n  const prevRes = prevRow ? parse(prevRow.resumen, {}) : {};\n  const label = w.nombre || w.url;\n  let res;\n  try {\n    res = await fetchWatch(http, w);\n  } catch (e) {\n    const msg = `${label}: ${e.message}`;\n    const fallos = (prevRes.fallos || 0) + 1;\n    // se avisa al 2º fallo seguido (evita falsas alarmas por un corte puntual) y no se repite\n    if (fallos === 2) errors.push(msg);\n    out.push({ clave, token: clienteRow.token, snapshot: prevRow ? prevRow.snapshot : '', resumen: JSON.stringify({ ...prevRes, ultima: now.toISOString(), error: e.message, fallos }) });\n    continue;\n  }\n  const productos = res.productos.map((p) => ({ ...p, watch: label }));\n  allProducts.push(...productos);\n  const prevCount = prev ? Object.keys(prev).length : 0;\n  const parcial = prev && productos.length < 0.5 * prevCount && !res.retirado;\n  if (prev) {\n    const ev = compareSnapshots(productos, prev, { ...opts, parcial, moneda: w.moneda });\n    if (res.retirado && w.tipo !== 'shopify_tienda' && w.tipo !== 'woo_tienda' && !prevRes.retirado) {\n      ev.push({ kind: 'removed_product', p: { name: w.nombre || w.url, price: null, url: w.url, currency: w.moneda } });\n    }\n    ev.forEach((e) => { e.watch = label; });\n    events.push(...ev);\n  } else {\n    nuevosBaseline++;\n    productosBaseline += productos.length;\n  }\n  // ¿un competidor vende más barato que tú?\n  if (w.mi_precio && productos[0] && productos[0].price !== null && productos.length === 1) {\n    const p = productos[0];\n    const limite = Number(w.mi_precio) * (1 - (Number(w.tolerancia_pct) || 0) / 100);\n    const antes = prev && Object.values(prev)[0];\n    const yaAvisado = antes && antes.p !== null && antes.p < limite && antes.p === p.price;\n    if (p.price < limite && !yaAvisado) {\n      events.push({ kind: 'undercut', p, mine: Number(w.mi_precio), watch: label,\n                    pct: Math.round(((p.price - w.mi_precio) / w.mi_precio) * 10000) / 100 });\n    }\n  }\n  const snap = parcial ? { ...prev, ...snapshotOf(productos) } : snapshotOf(productos);\n  out.push({ clave, token: clienteRow.token, snapshot: JSON.stringify(snap),\n             resumen: JSON.stringify({ ultima: now.toISOString(), productos: productos.length, error: parcial ? 'lectura parcial' : '', fallos: 0,\n                                       retirado: Boolean(res.retirado), precio: productos.length === 1 ? productos[0].price : null,\n                                       moneda: productos[0]?.currency || w.moneda || '', stock: productos.length === 1 ? productos[0].stock : null,\n                                       cambios: prev ? events.filter((e) => e.watch === label).length : 0 }) });\n}\nevents.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || (a.pct || 0) - (b.pct || 0));\n\n// fila resumen del cliente (última revisión)\nconst prevCli = parse(estados[`${clienteRow.token}:__cliente`]?.resumen, {});\nout.push({ clave: `${clienteRow.token}:__cliente`, token: clienteRow.token, snapshot: '',\n           resumen: JSON.stringify({ ...prevCli, ultima: now.toISOString(), vigilancias: watches.length, productos: allProducts.length,\n                                     cambios: events.length, errores: errors.length,\n                                     con_error: out.filter((r) => { try { return JSON.parse(r.resumen).fallos > 0; } catch (e) { return false; } }).length, historial: [{ at: now.toISOString(), cambios: events.length }].concat(prevCli.historial || []).slice(0, 30) }) });\n\nconst items = out.map((r) => ({ json: { tipo: 'estado', ...r } }));\nconst bienvenida = !events.length && nuevosBaseline > 0 && !prevCli.bienvenida_enviada ? { productos: productosBaseline, webs: nuevosBaseline } : null;\nif (bienvenida) items[items.length - 1].json.resumen = JSON.stringify({ ...parse(items[items.length - 1].json.resumen, {}), bienvenida_enviada: true });\nif (events.length || errors.length || bienvenida) {\n  const m = buildMessages({ cliente: clienteRow, events, errors, stats: { productos: allProducts.length }, bienvenida, fecha: now });\n  const csv = csvOf(allProducts, now);\n  items.push({\n    json: { tipo: 'aviso', ...m, telegram_chat_id: clienteRow.telegram_chat_id || '', email_to: clienteRow.email || '', email_from: EMAIL_FROM,\n            enviar_telegram: Boolean(clienteRow.telegram_chat_id), enviar_email: Boolean(clienteRow.email), cambios: events.length },\n    binary: { csv: { data: Buffer.from(csv, 'utf8').toString('base64'), mimeType: 'text/csv', fileName: `precios-${now.toISOString().slice(0, 10)}.csv`, fileExtension: 'csv' } },\n  });\n}\nreturn items;\n"
+      }
+    },
+    {
+      "id": "165eabfe-f327-50ac-8f2e-004242b95401",
+      "name": "¿Estado o aviso?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        680,
+        0
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "estado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "estado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "aviso",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "aviso"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "fin",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fin"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "65b0dbed-719b-54fb-894a-4195d5476a08",
+      "name": "Fila estado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        -160
+      ],
+      "parameters": {
+        "jsCode": "// Deja solo las columnas de la tabla denoro_estado\nreturn $input.all().map((i) => ({ json: { clave: i.json.clave, token: i.json.token, snapshot: i.json.snapshot, resumen: i.json.resumen } }));\n"
+      }
+    },
+    {
+      "id": "c7559af5-7050-52a1-b356-d3c2bd36acff",
+      "name": "Guardar estado",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        -160
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__TABLE_ESTADO__",
+          "cachedResultName": "denoro_estado"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "clave",
+              "condition": "eq",
+              "keyValue": "={{ $json.clave }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "93e7d4e1-5781-59c8-af22-a0a4c2649917",
+      "name": "¿Telegram activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        920,
+        40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1f43ecc1-b8b8-5160-9d2d-7d0a748787a5",
+              "leftValue": "={{ $json.enviar_telegram }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8c1f0399-2abc-5399-ab8e-7341041df5f7",
+      "name": "¿Email activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        920,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b319bf17-3595-51f2-8aa5-61f3e3dac097",
+              "leftValue": "={{ $json.enviar_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "36cbbf4d-9c16-559f-944c-e954e407fd87",
+      "name": "Enviar a Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1160,
+        40
+      ],
+      "parameters": {
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "text": "={{ $json.telegram }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "0359d3e7-09f0-57cf-bf62-75fddd9c0b7e",
+      "name": "Enviar email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1160,
+        220
+      ],
+      "parameters": {
+        "fromEmail": "={{ $json.email_from }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false,
+          "attachments": "csv"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Al revisar un cliente": {
+      "main": [
+        [
+          {
+            "node": "Leer cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer cliente": {
+      "main": [
+        [
+          {
+            "node": "Leer estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer estado": {
+      "main": [
+        [
+          {
+            "node": "Revisar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revisar": {
+      "main": [
+        [
+          {
+            "node": "¿Estado o aviso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Estado o aviso?": {
+      "main": [
+        [
+          {
+            "node": "Fila estado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Telegram activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Email activo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fila estado": {
+      "main": [
+        [
+          {
+            "node": "Guardar estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Telegram activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Email activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "Europe/Madrid",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

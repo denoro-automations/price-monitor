@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Denoro · Tu monitor de precios</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>/*CSS*/</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <div class="brand"><i>D</i>Denoro <small>Monitor de precios</small></div>
+  <div class="spacer"></div>
+  <span class="hint" id="last"></span>
+  <button id="checkNow" type="button">Revisar ahora</button>
+</div></header>
+
+<main class="wrap" id="app">
+  <div class="center" id="loading"><p class="hint">Cargando tu panel…</p></div>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<template id="tpl">
+  <h1 id="title"></h1>
+  <p class="sub">Pega enlaces de tu competencia y te avisamos cuando cambien sus precios o su stock.</p>
+
+  <div class="stats">
+    <div class="stat"><b class="num" id="sLinks">0</b><span>enlaces vigilados</span></div>
+    <div class="stat"><b class="num" id="sProducts">0</b><span>productos en seguimiento</span></div>
+    <div class="stat"><b class="num" id="sChanges">0</b><span>cambios en la última revisión</span></div>
+  </div>
+
+  <div class="grid">
+    <section>
+      <div class="card">
+        <div class="card-head"><h2>Añadir un enlace</h2><span class="hint" id="quota"></span></div>
+        <form id="addForm" class="add" autocomplete="off">
+          <label for="url" class="sr-only">Enlace de la tienda o del producto</label>
+          <input id="url" name="url" inputmode="url" placeholder="https://tienda-competidor.com/products/camiseta" required>
+          <button class="primary" id="detectBtn" type="submit">Comprobar</button>
+        </form>
+        <ul class="steps">
+          <li><b>Producto concreto</b> (cualquier tienda): vigilamos su precio y stock. Puedes indicar tu precio para saber si te ganan.</li>
+          <li><b>Tienda entera</b> (Shopify o WooCommerce): pega la página principal o una colección y vigilamos todo su catálogo.</li>
+        </ul>
+        <div id="addMsg"></div>
+        <div id="preview"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Lo que estás vigilando</h2><span class="hint">Se revisa automáticamente</span></div>
+        <div style="overflow-x:auto"><table>
+          <thead><tr><th>Enlace</th><th class="hide-s">Estado</th><th class="r">Precio actual</th><th class="r">Tu precio</th><th></th></tr></thead>
+          <tbody id="watchRows"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <aside>
+      <div class="card">
+        <h2>Dónde te avisamos</h2>
+        <p class="hint" style="margin:0 0 14px">Un único resumen cuando hay cambios. Nunca spam.</p>
+        <form id="settingsForm">
+          <div class="field"><label for="email">Email</label><input id="email" type="email" placeholder="tu@tienda.com"></div>
+          <div class="field"><label for="chat">Telegram · chat ID</label><input id="chat" inputmode="numeric" placeholder="123456789">
+            <ol class="steps"><li>Abre <a id="botLink" href="#" target="_blank" rel="noopener">nuestro bot</a> y pulsa <b>Iniciar</b>.</li><li>Escribe a <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a> y copia tu <b>Id</b>.</li></ol></div>
+          <div class="field"><label for="freq">Revisar cada</label>
+            <select id="freq"><option value="1">1 hora</option><option value="3">3 horas</option><option value="6">6 horas</option><option value="12">12 horas</option><option value="24">24 horas</option></select></div>
+          <div class="field"><label for="thr">Avisar a partir de un cambio del</label>
+            <select id="thr"><option value="0">cualquier cambio</option><option value="1">1 %</option><option value="3">3 %</option><option value="5">5 %</option><option value="10">10 %</option></select></div>
+          <label class="toggle"><input type="checkbox" id="optStock"> Cambios de stock</label>
+          <label class="toggle"><input type="checkbox" id="optNew"> Productos nuevos</label>
+          <label class="toggle"><input type="checkbox" id="optRemoved"> Productos retirados</label>
+          <div class="row" style="margin-top:14px"><button class="primary" type="submit" id="saveSettings">Guardar</button><button type="button" id="testBtn">Enviar prueba</button></div>
+          <div id="setMsg"></div>
+        </form>
+      </div>
+    </aside>
+  </div>
+</template>
+
+<script>
+(() => {
+  const API = location.pathname.replace(/\/panel\/?$/, '/api');
+  const BOT = '__BOT_USERNAME__';
+  const token = new URLSearchParams(location.search).get('t') || '';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const TYPES = { shopify_tienda: 'Tienda Shopify', woo_tienda: 'Tienda WooCommerce', shopify_producto: 'Producto · Shopify', woo_producto: 'Producto · WooCommerce', producto: 'Producto' };
+  const fmtMoney = (v, cur) => v === null || v === undefined ? '—' : new Intl.NumberFormat('es-ES', cur ? { style: 'currency', currency: cur } : { minimumFractionDigits: 2 }).format(v);
+  const ago = (iso) => {
+    if (!iso) return 'pendiente';
+    const m = Math.round((Date.now() - new Date(iso)) / 60000);
+    if (m < 1) return 'hace un momento'; if (m < 60) return `hace ${m} min`;
+    const h = Math.round(m / 60); if (h < 24) return `hace ${h} h`;
+    return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  };
+  let state = null;
+  let pending = null;
+
+  function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3200); }
+  function msg(id, text, kind = 'error') { $(id).innerHTML = text ? `<p class="msg ${kind}">${esc(text)}</p>` : ''; }
+  async function api(accion, data = {}) {
+    let res;
+    try { res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, accion, ...data }) }); }
+    catch (e) { return { ok: false, error: 'No hay conexión con el servidor. Inténtalo en un momento.' }; }
+    try { return await res.json(); } catch (e) { return { ok: false, error: `Error del servidor (${res.status})` }; }
+  }
+  async function busy(btn, fn) { const t = btn.textContent; btn.disabled = true; btn.textContent = '…'; try { return await fn(); } finally { btn.disabled = false; btn.textContent = t; } }
+
+  function render() {
+    const s = state;
+    $('title').textContent = s.cliente.nombre;
+    const watches = s.vigilancias;
+    $('sLinks').textContent = watches.length;
+    $('sProducts').textContent = watches.reduce((a, w) => a + (w.estado?.productos || 0), 0).toLocaleString('es-ES');
+    $('sChanges').textContent = s.resumen?.cambios ?? '—';
+    $('last').textContent = s.resumen?.ultima ? `Última revisión ${ago(s.resumen.ultima)}` : 'Aún sin revisar';
+    $('quota').textContent = `${watches.length} de ${s.ajustes.max_vigilancias} enlaces`;
+    const rows = watches.map((w) => {
+      const e = w.estado;
+      const beaten = e && w.mi_precio && e.precio !== null && e.precio !== undefined && e.precio < w.mi_precio * (1 - (w.tolerancia_pct || 0) / 100);
+      const badge = !e ? '<span class="badge info">Pendiente</span>'
+        : e.error && e.fallos ? `<span class="badge bad" title="${esc(e.error)}">Error</span>`
+        : e.retirado ? '<span class="badge warn">No disponible</span>'
+        : beaten ? `<span class="badge bad">Te gana ${Math.abs(Math.round((e.precio - w.mi_precio) / w.mi_precio * 1000) / 10).toLocaleString('es-ES')} %</span>`
+        : `<span class="badge ok">${e.productos > 1 ? e.productos.toLocaleString('es-ES') + ' productos' : 'OK'}</span>`;
+      const isStore = /tienda$/.test(w.tipo);
+      const price = isStore ? '<span class="hint">catálogo</span>' : e ? `<span class="num"${beaten ? ' style="color:var(--bad);font-weight:600"' : ''}>${fmtMoney(e.precio, e.moneda || w.moneda)}</span>${e.stock === false ? '<div class="url">sin stock</div>' : ''}` : '—';
+      const mine = isStore ? '<span class="hint">—</span>'
+        : `<form class="price-edit" data-id="${esc(w.id)}"><input aria-label="Tu precio" inputmode="decimal" name="p" value="${w.mi_precio ?? ''}" placeholder="—"><button class="icon-btn" type="submit" title="Guardar tu precio">OK</button></form>`;
+      return `<tr><td><div class="name">${esc(w.nombre)}</div><div class="url">${esc(TYPES[w.tipo] || w.tipo)} · <a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.url.replace(/^https?:\/\//, '').slice(0, 60))}</a></div>
+        <div class="url">${e ? 'Revisado ' + ago(e.ultima) : 'Se revisará en la próxima pasada'}</div></td>
+        <td class="hide-s">${badge}</td><td class="r">${price}</td><td class="r">${mine}</td>
+        <td class="r"><button class="ghost danger icon-btn" data-del="${esc(w.id)}" title="Dejar de vigilar" aria-label="Dejar de vigilar ${esc(w.nombre)}">✕</button></td></tr>`;
+    }).join('');
+    $('watchRows').innerHTML = rows || '<tr><td colspan="5" class="empty">Todavía no vigilas nada. Pega arriba el enlace de un producto o de una tienda.</td></tr>';
+    $('email').value = s.cliente.email; $('chat').value = s.cliente.telegram_chat_id;
+    $('freq').value = String(s.ajustes.frecuencia_horas); $('thr').value = String(s.ajustes.umbral_pct);
+    if (!$('thr').value) { $('thr').insertAdjacentHTML('beforeend', `<option value="${s.ajustes.umbral_pct}">${s.ajustes.umbral_pct} %</option>`); $('thr').value = String(s.ajustes.umbral_pct); }
+    $('optStock').checked = s.ajustes.avisar_stock; $('optNew').checked = s.ajustes.avisar_nuevos; $('optRemoved').checked = s.ajustes.avisar_retirados;
+  }
+
+  function renderPreview(d) {
+    const isStore = /tienda$/.test(d.tipo);
+    const items = (d.productos || []).map((p) => `<li>${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : '<span class="img-ph"></span>'}
+      <div><div class="name">${esc(p.name)}</div>${p.stock === false ? '<div class="url">sin stock</div>' : ''}</div>
+      <div class="p"><span class="num">${fmtMoney(p.price, p.currency || d.moneda)}</span>${p.regular ? `<div class="url"><s>${fmtMoney(p.regular, p.currency || d.moneda)}</s></div>` : ''}</div></li>`).join('');
+    $('preview').innerHTML = `<div class="preview"><div class="preview-head"><span class="badge info">${esc(TYPES[d.tipo] || d.tipo)}</span>
+      <div><div class="name">${esc(d.nombre)}</div><div class="url">${isStore ? `${esc(String(d.total))} productos encontrados` : 'Producto encontrado'}</div></div></div>
+      <div class="preview-body">${d.aviso ? `<p class="msg" style="background:var(--warn-soft);color:var(--warn)">${esc(d.aviso)}</p>` : ''}<ul class="plist">${items}</ul>
+      <form id="confirmForm" style="margin-top:14px">
+        <div class="row">
+          <div><label for="wName">Nombre para reconocerlo</label><input id="wName" value="${esc(d.nombre)}" maxlength="80"></div>
+          ${isStore ? '' : `<div><label for="wMine">Tu precio (opcional)</label><input id="wMine" inputmode="decimal" placeholder="Ej. 24,90"></div>
+          <div><label for="wTol">Margen</label><select id="wTol"><option value="0">Avisar si es más barato</option><option value="2">…más de un 2 %</option><option value="5">…más de un 5 %</option></select></div>`}
+        </div>
+        <div class="row" style="margin-top:4px"><button class="primary" type="submit" id="saveWatch">Empezar a vigilar</button><button type="button" id="cancelWatch">Cancelar</button></div>
+      </form></div></div>`;
+    $('confirmForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      await busy($('saveWatch'), async () => {
+        const r = await api('guardar_vigilancia', { url: pending.url, nombre: $('wName').value, mi_precio: $('wMine')?.value ?? '', tolerancia_pct: $('wTol')?.value ?? 0 });
+        if (!r.ok) return msg('addMsg', r.error);
+        $('preview').innerHTML = ''; $('url').value = ''; pending = null;
+        msg('addMsg', r.mensaje || 'Guardado', 'okay');
+        await load();
+      });
+    });
+    $('cancelWatch').addEventListener('click', () => { $('preview').innerHTML = ''; pending = null; });
+  }
+
+  async function load() {
+    const r = await api('estado');
+    if (!r.ok) { $('app').innerHTML = `<div class="center"><div><h1>No podemos abrir tu panel</h1><p class="sub">${esc(r.error)}</p></div></div>`; $('checkNow').hidden = true; return; }
+    const first = !state; state = r;
+    if (first) {
+      $('app').innerHTML = ''; $('app').append($('tpl').content.cloneNode(true)); bind();
+      if (BOT && !BOT.startsWith('__')) $('botLink').href = `https://t.me/${BOT}`; else $('botLink').removeAttribute('href');
+    }
+    render();
+  }
+
+  function bind() {
+    $('addForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault(); msg('addMsg', ''); $('preview').innerHTML = '';
+      await busy($('detectBtn'), async () => {
+        const r = await api('detectar', { url: $('url').value });
+        if (!r.ok) return msg('addMsg', r.error);
+        pending = r; renderPreview(r);
+      });
+    });
+    $('watchRows').addEventListener('click', async (ev) => {
+      const id = ev.target.closest('[data-del]')?.dataset.del; if (!id) return;
+      const w = state.vigilancias.find((x) => x.id === id);
+      if (!confirm(`¿Dejar de vigilar «${w.nombre}»?`)) return;
+      const r = await api('borrar_vigilancia', { id }); if (!r.ok) return toast(r.error);
+      toast('Enlace eliminado'); load();
+    });
+    $('watchRows').addEventListener('submit', async (ev) => {
+      ev.preventDefault(); const f = ev.target.closest('form'); if (!f) return;
+      const r = await api('editar_vigilancia', { id: f.dataset.id, mi_precio: f.p.value });
+      toast(r.ok ? 'Precio guardado' : r.error); if (r.ok) load();
+    });
+    $('settingsForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault(); msg('setMsg', '');
+      await busy($('saveSettings'), async () => {
+        const r = await api('ajustes', { email: $('email').value, telegram_chat_id: $('chat').value, frecuencia_horas: +$('freq').value, umbral_pct: +$('thr').value,
+          avisar_stock: $('optStock').checked, avisar_nuevos: $('optNew').checked, avisar_retirados: $('optRemoved').checked });
+        if (!r.ok) return msg('setMsg', r.error);
+        msg('setMsg', 'Ajustes guardados', 'okay'); load();
+      });
+    });
+    $('testBtn').addEventListener('click', async () => {
+      msg('setMsg', '');
+      await busy($('testBtn'), async () => {
+        const r = await api('probar_aviso');
+        msg('setMsg', r.ok ? r.mensaje : r.error, r.ok ? 'okay' : 'error');
+      });
+    });
+  }
+
+  $('checkNow').addEventListener('click', async () => {
+    await busy($('checkNow'), async () => {
+      toast('Revisando tus enlaces… con tiendas grandes puede tardar un par de minutos');
+      const r = await api('revisar_ahora');
+      toast(r.ok ? (r.mensaje || 'Revisión terminada') : r.error);
+      if (r.ok) load();
+    });
+  });
+
+  if (!token) { $('app').innerHTML = '<div class="center"><div><h1>Falta tu enlace de acceso</h1><p class="sub">Abre el enlace personal que te enviamos desde Denoro.</p></div></div>'; $('checkNow').hidden = true; }
+  else load();
+})();
+</script>
+</body>
+</html>
