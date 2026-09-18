@@ -14,8 +14,8 @@ const productos = copia.estado.reduce((a, e) => a + (e.resumen?.productos || 0),
 const activos = copia.clientes.filter((c) => c.activo).length;
 const vigilancias = copia.clientes.reduce((a, c) => a + (c.config.vigilancias || []).length, 0);
 const mb = Math.round((json.length / 1048576) * 100) / 100;
-const html = `<div style="font-family:Arial,sans-serif;max-width:560px;color:#1d2939">
-<h2 style="color:#0f2a3d;margin:0 0 12px">Copia de seguridad · ${fecha}</h2>
+const html = `<div style="font-family:Arial,sans-serif;max-width:560px;color:#35322c">
+<h2 style="color:#191713;margin:0 0 12px">Copia de seguridad · ${fecha}</h2>
 <p>Adjunto el fichero con los clientes y el estado de sus vigilancias.</p>
 <ul>
 <li><b>${copia.clientes.length}</b> clientes (${activos} activos)</li>
@@ -23,7 +23,7 @@ const html = `<div style="font-family:Arial,sans-serif;max-width:560px;color:#1d
 <li><b>${productos.toLocaleString('es-ES')}</b> productos en seguimiento</li>
 <li>Tamaño: ${mb} MB</li>
 </ul>
-<p style="font-size:13px;color:#5b6b7a">El código y los workflows se versionan en GitHub. Para la copia local, ejecuta <code>backup-denoro.ps1</code> en la carpeta del proyecto.</p></div>`;
+<p style="font-size:13px;color:#6e6a61">El código y los workflows se versionan en GitHub. Para la copia local, ejecuta <code>backup-denoro.ps1</code> en la carpeta del proyecto.</p></div>`;
 return [{
   json: { asunto: `🗄️ Denoro · Copia de seguridad ${fecha} (${copia.clientes.length} clientes)`, email_html: html,
           clientes: copia.clientes.length, vigilancias, productos },
