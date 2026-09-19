@@ -13,9 +13,9 @@ const text = `🚨 <b>Fallo en un workflow</b>\n` +
   `<b>Error:</b> ${esc(msg)}\n` +
   `<b>Cuándo:</b> ${when}` + (exec.url ? `\n<a href="${esc(exec.url)}">Ver ejecución</a>` : '');
 const html = `<div style="font-family:Arial,sans-serif;max-width:560px">
-<h2 style="color:#b42318;margin:0 0 12px">Fallo en «${esc(wf.name || wf.id)}»</h2>
+<h2 style="color:#8f2f24;margin:0 0 12px">Fallo en «${esc(wf.name || wf.id)}»</h2>
 <p><b>Nodo:</b> ${esc(node)}<br><b>Error:</b> ${esc(msg)}<br><b>Cuándo:</b> ${when}</p>
 ${exec.url ? `<p><a href="${esc(exec.url)}">Abrir la ejecución en n8n</a></p>` : ''}
-${err.stack ? `<pre style="background:#f4f6f8;padding:12px;font-size:11px;white-space:pre-wrap">${esc(String(err.stack).slice(0, 1500))}</pre>` : ''}
+${err.stack ? `<pre style="background:#f4f3ef;padding:12px;font-size:11px;white-space:pre-wrap">${esc(String(err.stack).slice(0, 1500))}</pre>` : ''}
 </div>`;
 return [{ json: { telegram: text, asunto: `⚠️ Denoro · Error en ${wf.name || 'un workflow'}`, email_html: html } }];

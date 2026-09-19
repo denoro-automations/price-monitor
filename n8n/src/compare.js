@@ -233,40 +233,40 @@ for (const [kind, [label, icon]] of Object.entries(LABELS)) {
 if (errors.length) tg += '\n\n⚠️ <b>Fuentes con error</b>\n' + errors.map((x) => '• ' + esc(x)).join('\n');
 if (tg.length > 4000) tg = tg.slice(0, 3990) + '\n…';
 
-const td = 'padding:6px 8px;border-bottom:1px solid #e6eaee';
+const td = 'padding:6px 8px;border-bottom:1px solid #e7e4dc';
 const tiles = [[allProducts.length, 'productos revisados'], [count('price_drop') + count('undercut'), 'bajadas / te ganan'],
                [count('out_of_stock'), 'sin stock'], [events.length, 'cambios totales']]
-  .map(([v, l]) => `<td style="padding:12px;background:#f4f6f8;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:700;color:#0f2a3d">${v}</div><div style="font-size:12px;color:#5b6b7a">${l}</div></td>`).join('');
+  .map(([v, l]) => `<td style="padding:12px;background:#f4f3ef;border-radius:8px;text-align:center"><div style="font-size:22px;font-weight:700;color:#191713">${v}</div><div style="font-size:12px;color:#6e6a61">${l}</div></td>`).join('');
 let sections = '';
 for (const [kind, [label, icon]] of Object.entries(LABELS)) {
   const group = events.filter((e) => e.kind === kind);
   if (!group.length) continue;
   const rows = group.slice(0, 100).map((e) => {
     const before = e.mine ?? e.old;
-    const color = (e.pct || 0) < 0 ? '#b42318' : '#067647';
-    return `<tr><td style="${td}"><a href="${esc(e.p.url)}" style="color:#0f2a3d">${esc(e.p.name)}</a></td>` +
-      `<td style="${td};color:#5b6b7a">${esc(e.p.source)}</td>` +
+    const color = (e.pct || 0) < 0 ? '#8f2f24' : '#2c5f3c';
+    return `<tr><td style="${td}"><a href="${esc(e.p.url)}" style="color:#191713">${esc(e.p.name)}</a></td>` +
+      `<td style="${td};color:#6e6a61">${esc(e.p.source)}</td>` +
       `<td style="${td};text-align:right">${before === undefined ? '' : money(before, e.p.currency)}</td>` +
       `<td style="${td};text-align:right;font-weight:600">${money(e.p.price, e.p.currency)}</td>` +
       `<td style="${td};text-align:right;color:${color}">${e.pct === undefined ? '' : pctFmt(e.pct)}</td></tr>`;
   }).join('');
   sections += `<h3 style="margin:24px 0 8px;font-size:16px">${icon} ${label} (${group.length})</h3>` +
     `<table width="100%" cellspacing="0" style="border-collapse:collapse;font-size:14px">` +
-    `<tr style="color:#5b6b7a;font-size:12px;text-align:left"><th style="padding:6px 8px">Producto</th><th style="padding:6px 8px">Web</th>` +
+    `<tr style="color:#6e6a61;font-size:12px;text-align:left"><th style="padding:6px 8px">Producto</th><th style="padding:6px 8px">Web</th>` +
     `<th style="padding:6px 8px;text-align:right">Antes / tu precio</th><th style="padding:6px 8px;text-align:right">Ahora</th><th style="padding:6px 8px;text-align:right">Cambio</th></tr>${rows}</table>`;
 }
 const errorBox = errors.length
-  ? `<p style="margin-top:24px;padding:12px;background:#fef3f2;border-radius:8px;color:#b42318"><b>Fuentes con error:</b><br>${errors.map(esc).join('<br>')}</p>` : '';
+  ? `<p style="margin-top:24px;padding:12px;background:#f8eae7;border-radius:8px;color:#8f2f24"><b>Fuentes con error:</b><br>${errors.map(esc).join('<br>')}</p>` : '';
 const fecha = now.toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' });
-const html = `<!doctype html><html><body style="margin:0;background:#eef1f4;font-family:Arial,Helvetica,sans-serif;color:#1d2939">
+const html = `<!doctype html><html><body style="margin:0;background:#f4f3ef;font-family:Arial,Helvetica,sans-serif;color:#35322c">
 <table width="100%" cellspacing="0"><tr><td align="center" style="padding:24px">
 <table width="640" cellspacing="0" style="background:#fff;border-radius:12px;padding:28px"><tr><td>
-<div style="font-size:12px;letter-spacing:.08em;color:#5b6b7a;text-transform:uppercase">Denoro Automations</div>
-<h2 style="margin:4px 0;font-size:22px;color:#0f2a3d">Monitor de precios de la competencia</h2>
-<div style="color:#5b6b7a;font-size:13px">${esc(fecha)} · ${plural(nSources, 'web', 'webs')}${demo ? ' · <b>demo: cambios simulados</b>' : ''}</div>
+<div style="font-size:12px;letter-spacing:.08em;color:#6e6a61;text-transform:uppercase">Denoro Automations</div>
+<h2 style="margin:4px 0;font-size:22px;color:#191713">Monitor de precios de la competencia</h2>
+<div style="color:#6e6a61;font-size:13px">${esc(fecha)} · ${plural(nSources, 'web', 'webs')}${demo ? ' · <b>demo: cambios simulados</b>' : ''}</div>
 <table width="100%" cellspacing="8" style="margin-top:16px"><tr>${tiles}</tr></table>
-${sections || '<p style="color:#5b6b7a">Sin cambios desde la última revisión.</p>'}${errorBox}
-<p style="margin-top:28px;font-size:12px;color:#98a2b3">Adjunto: precios actuales de todos los productos (CSV).</p>
+${sections || '<p style="color:#6e6a61">Sin cambios desde la última revisión.</p>'}${errorBox}
+<p style="margin-top:28px;font-size:12px;color:#8a857a">Adjunto: precios actuales de todos los productos (CSV).</p>
 </td></tr></table></td></tr></table></body></html>`;
 
 // CSV con la foto actual (se abre directamente en Excel)
