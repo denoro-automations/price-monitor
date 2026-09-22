@@ -1,6 +1,6 @@
 # Monitor de precios multi-cliente (panel de Denoro)
 
-Cada cliente entra en **su propio panel**, pega los enlaces de la competencia que quiere vigilar y elige dónde recibir los avisos. Nosotros no tocamos nada: el workflow lee esa configuración y revisa los enlaces con la frecuencia que el cliente haya elegido.
+Cada cliente entra en **su propio panel**, pega los enlaces de la competencia que quiere vigilar y elige dónde recibir los avisos. No hace falta que yo toque nada: el workflow lee esa configuración y revisa los enlaces con la frecuencia que el cliente haya elegido.
 
 ```
 Cliente  →  /webhook/denoro/panel?t=TOKEN   (panel web)
@@ -14,16 +14,16 @@ Planificador (cada hora) ──► Revisar cliente ──► Telegram / email
 ```
 
 ## Qué puede pegar el cliente
-| Pega… | Qué hacemos |
+| Pega… | Qué hace el sistema |
 |---|---|
-| Página de un producto de **cualquier tienda** | Leemos precio y stock de los datos estructurados de la página (JSON-LD, Open Graph, microdatos). Si no los tiene, buscamos el precio por aproximación y avisamos de que lo compruebe. |
-| Producto de una tienda **Shopify** | Usamos su ficha pública `/products/<handle>.js` (precio, rebaja y stock por variante). |
+| Página de un producto de **cualquier tienda** | Lee precio y stock de los datos estructurados de la página (JSON-LD, Open Graph, microdatos). Si no los tiene, busca el precio por aproximación y avisa de que conviene comprobarlo. |
+| Producto de una tienda **Shopify** | Usa su ficha pública `/products/<handle>.js` (precio, rebaja y stock por variante). |
 | **Tienda entera Shopify** (inicio o colección) | Catálogo completo vía `/products.json`. |
 | **Tienda entera WooCommerce** | Catálogo completo vía la Store API pública. |
 
-Al pegar el enlace, el panel enseña una **vista previa** con los primeros productos y sus precios: el cliente ve que hemos entendido bien la tienda antes de guardar. Si una web bloquea las consultas automáticas (Amazon, Zara y otras grandes lo hacen) lo decimos con un mensaje claro en vez de fallar en silencio.
+Al pegar el enlace, el panel enseña una **vista previa** con los primeros productos y sus precios: el cliente ve que la tienda se ha leído bien antes de guardar. Si una web bloquea las consultas automáticas (algunas tiendas grandes lo hacen) lo dice con un mensaje claro en vez de fallar en silencio.
 
-Además, en los productos sueltos el cliente puede poner **su propio precio** y avisamos cuando un competidor se le pone por debajo (con un margen configurable).
+Además, en los productos sueltos el cliente puede poner **su propio precio** y recibe un aviso cuando un competidor se le pone por debajo (con un margen configurable).
 
 ## Los tres workflows
 | Workflow | Para qué |
@@ -50,7 +50,7 @@ Los avisos salen del bot de Telegram y de la cuenta SMTP de Denoro: el cliente n
 
 ## Detalles que evitan sustos
 - **Un fallo puntual no dispara avisos**: se avisa al segundo fallo seguido de un enlace y no se repite hasta que se arregla.
-- **Lectura parcial**: si una tienda devuelve menos de la mitad de productos que la última vez, no avisamos de "productos retirados".
+- **Lectura parcial**: si una tienda devuelve menos de la mitad de productos que la última vez, no avisa de "productos retirados".
 - **Sin avisos repetidos**: mientras el precio no cambie, el aviso de "te están ganando" no se repite.
 - **Primera revisión**: solo toma precios de referencia y manda un mensaje de bienvenida con cuántos productos vigila.
 - **Educado con las webs**: respeta `robots.txt`, pausa entre peticiones al mismo dominio, reintentos con espera y se identifica con su propio User-Agent.

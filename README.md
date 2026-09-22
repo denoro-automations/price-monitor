@@ -13,7 +13,7 @@
 | ⛔ / ✅ **Out of stock / back in stock** | the right moment to push your own ads |
 | 🆕 / 🗑️ **New and removed products** | spot catalogue changes early |
 
-Every alert includes the full current price list as a **CSV** (opens in Excel), and the history is kept so you can chart trends.
+Every alert includes the full current price list as a **CSV** (opens in Excel). The n8n versions compare each check with the previous one (they keep the latest snapshot); the Python version also keeps the full history in SQLite and exports the last 90 days to CSV.
 
 ## Supported stores
 
@@ -23,7 +23,7 @@ Every alert includes the full current price list as a **CSV** (opens in Excel), 
 | `woocommerce` | public Store API (`/wp-json/wc/store/v1/products`) | just the store URL |
 | `css` | any HTML catalogue, using CSS selectors | 4–5 selectors |
 
-It is built to be polite and reliable: it follows `robots.txt`, waits between requests, retries on `429/5xx` errors, stops if pagination loops, and **does not report products as "removed" when a site only partly loads**. It only reads public, non-personal data.
+It is built to be polite and reliable. The Python version and the multi-client panel follow `robots.txt`, wait between requests to the same site, retry on `429/5xx` errors and identify themselves with their own User-Agent. All versions **avoid reporting products as "removed" when a site only partly loads**; the single-store n8n workflow waits 1.5 s between pages. It only reads public, non-personal data.
 
 ## Two ways to run it
 
@@ -85,6 +85,6 @@ n8n-workflow.json, n8n-error-workflow.json
 Each client gets a private panel where they paste the links they want to watch — a whole Shopify/WooCommerce store or single product pages from any shop — and chooses where to get the alerts. See [SAAS.md](SAAS.md) (Spanish).
 
 ## Want this for your store?
-Setup for up to 3 competitor sites, custom alerts and weekly reports. Contact me on [Upwork](https://www.upwork.com/) or open an issue.
+Fixed-price plans from €149: up to 3, 10 or 30 watched links (a whole store counts as one), alerts by Telegram and email, and your own panel. Premium adds a weekly PDF report of your store. Details and quote request: [https://denoro-automations.github.io/](https://denoro-automations.github.io/).
 
 *Demo data comes from books.toscrape.com, a public website built for scraping practice.*

@@ -71,7 +71,7 @@ if (accion.startsWith('admin_')) {
 // ------------------------------------------------------------------ cliente
 const c = clientes.find((x) => x.token && x.token === String(body.token || ''));
 if (!c) return fail(401, 'Este enlace no es válido. Pide a Denoro tu enlace de acceso.');
-if (!c.activo) return fail(403, 'Tu cuenta está pausada. Escríbenos para reactivarla.');
+if (!c.activo) return fail(403, 'Tu cuenta está pausada. Escríbeme para reactivarla.');
 const cfg = { ...DEFAULTS, ...parse(c.config, {}) };
 
 if (accion === 'estado') return reply(200, vistaCliente(c));
@@ -84,7 +84,7 @@ if (accion === 'detectar') {
 }
 
 if (accion === 'guardar_vigilancia') {
-  if (cfg.vigilancias.length >= cfg.max_vigilancias) return fail(403, `Tu plan permite ${cfg.max_vigilancias} enlaces. Escríbenos para ampliarlo.`);
+  if (cfg.vigilancias.length >= cfg.max_vigilancias) return fail(403, `Tu plan permite ${cfg.max_vigilancias} enlaces. Escríbeme para ampliarlo.`);
   const d = await detectWatch(http, String(body.url || '').slice(0, 500));
   if (!d.ok) return reply(422, d);
   if (cfg.vigilancias.some((w) => w.url === d.url)) return fail(409, 'Ya estás vigilando ese enlace');

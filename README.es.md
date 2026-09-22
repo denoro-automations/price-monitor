@@ -8,14 +8,14 @@
 - ⛔ ✅ **Productos agotados o que vuelven a tener stock**
 - 🆕 🗑️ **Productos nuevos y retirados**
 
-Cada aviso incluye un **CSV** (se abre en Excel) con todos los precios actuales, y se guarda el histórico.
+Cada aviso incluye un **CSV** (se abre en Excel) con todos los precios actuales. Las versiones de n8n comparan cada revisión con la anterior (guardan la última foto de precios); la versión Python además guarda el histórico completo en SQLite y exporta los últimos 90 días a CSV.
 
 ## Tiendas compatibles
 - **Shopify**: solo necesita la URL de la tienda (usa su `/products.json` público).
 - **WooCommerce**: solo necesita la URL (usa la Store API pública).
 - **Cualquier web HTML**: se configuran 4 o 5 selectores CSS.
 
-Es respetuoso y fiable: cumple `robots.txt`, hace pausas entre peticiones, reintenta ante errores `429/5xx` y **no avisa de productos "retirados" si una web carga a medias**. Solo lee datos públicos y no personales.
+Es respetuoso y fiable. La versión Python y el panel multi-cliente cumplen `robots.txt`, hacen pausas entre peticiones a la misma web, reintentan ante errores `429/5xx` y se identifican con su propio User-Agent. Todas las versiones **evitan avisar de productos "retirados" si una web carga a medias**; el workflow de n8n de una sola tienda espera 1,5 s entre páginas. Solo lee datos públicos y no personales.
 
 ## Opción A: n8n (sin código)
 1. En n8n: **Import from File** → `n8n-workflow.json` y `n8n-error-workflow.json`.
@@ -41,5 +41,8 @@ Los resultados se guardan en `data/`: `history.sqlite`, `price_history.csv`, `la
 
 ## Versión multi-cliente (panel para clientes)
 Cada cliente entra en su panel, pega los enlaces que quiere vigilar y elige dónde recibir los avisos: ver [SAAS.md](SAAS.md).
+
+## ¿Lo quieres para tu tienda?
+Planes a precio cerrado desde 149 €: hasta 3, 10 o 30 enlaces vigilados (una tienda entera cuenta como uno), avisos por Telegram y email y tu propio panel. El Premium añade el informe semanal de tu tienda en PDF. Detalles y presupuesto: [https://denoro-automations.github.io/](https://denoro-automations.github.io/).
 
 *Los datos de la demo son de books.toscrape.com, una web pública creada para practicar scraping.*
