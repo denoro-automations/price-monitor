@@ -27,11 +27,13 @@ def price_monitor():
             "2. Elige tus credenciales en **Telegram** y **Enviar email** (SMTP: Gmail con contraseña de aplicación).\n"
             "3. Activa el workflow. El histórico se guarda solo en ejecuciones **activas** (no en pruebas manuales): "
             "por eso `modo_demo` simula cambios cuando no hay datos previos.\n"
-            "4. En *Settings → Error workflow* elige **Denoro — Avisos de error**."), w=420, h=300, color=5),
+            "4. En *Settings → Error workflow* elige **Denoro — Avisos de error**.\n"
+            "Antes de leer nada mira el robots.txt de cada web: si alguna no lo permite, se para y dice cuál quitar."), w=420, h=320, color=5),
         node("Cada 6 horas", "n8n-nodes-base.scheduleTrigger", 1.2, [0, 0],
              {"rule": {"interval": [{"field": "hours", "hoursInterval": 6}]}}),
         node("Probar manualmente", "n8n-nodes-base.manualTrigger", 1, [0, 200], {}),
         node("Configuración", "n8n-nodes-base.code", 2, [240, 100], {"jsCode": js("config.js")}),
+        node("Comprobar robots.txt", "n8n-nodes-base.code", 2, [360, -80], {"jsCode": js("robots.js")}),
         node("Descargar páginas", "n8n-nodes-base.httpRequest", 4.2, [480, 100], {
             "url": "={{ $json.url }}",
             "sendHeaders": True,
@@ -70,7 +72,7 @@ def price_monitor():
         node("Sin cambios", "n8n-nodes-base.noOp", 1, [1440, 400], {}),
     ]
     conns = link(("Cada 6 horas", "Configuración"), ("Probar manualmente", "Configuración"),
-                 ("Configuración", "Descargar páginas"), ("Descargar páginas", "Extraer datos HTML"),
+                 ("Configuración", "Comprobar robots.txt"), ("Comprobar robots.txt", "Descargar páginas"), ("Descargar páginas", "Extraer datos HTML"),
                  ("Extraer datos HTML", "Normalizar y comparar"),
                  ("Normalizar y comparar", "¿Hay algo que avisar?"),
                  ("¿Hay algo que avisar?", "¿Telegram activo?", 0), ("¿Hay algo que avisar?", "¿Email activo?", 0),

@@ -23,7 +23,7 @@ Every alert includes the full current price list as a **CSV** (opens in Excel). 
 | `woocommerce` | public Store API (`/wp-json/wc/store/v1/products`) | just the store URL |
 | `css` | any HTML catalogue, using CSS selectors | 4–5 selectors |
 
-It is built to be polite and reliable. The Python version and the multi-client panel follow `robots.txt`, wait between requests to the same site, retry on `429/5xx` errors and identify themselves with their own User-Agent. All versions **avoid reporting products as "removed" when a site only partly loads**; the single-store n8n workflow waits 1.5 s between pages. It only reads public, non-personal data.
+It is built to be polite and reliable: every version checks `robots.txt` before reading (the n8n workflow stops and names the source to remove), waits between requests and identifies itself with its own User-Agent, and **does not report products as "removed" when a site only partly loads**. The Python version and the multi-client panel also retry on `429/5xx` errors. It only reads public, non-personal data.
 
 ## Two ways to run it
 

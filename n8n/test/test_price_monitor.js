@@ -115,6 +115,25 @@ async function scenario(cfgItems, responses, htmls, staticData) {
   assert.ok(errOut[0].json.telegram.includes('Invalid &lt;credentials&gt;'));
   assert.ok(errOut[0].json.asunto.includes('Monitor'));
 
+  // 9. robots.txt antes de descargar
+  const it = (fuente, url) => ({ json: { fuente, url } });
+  const fake = (mapa) => ({ httpRequest: async (o) => {
+    const r = mapa[o.url]; if (r instanceof Error) throw r; if (!r) return { statusCode: 404, body: '' }; return r; } });
+  const lista = [it('shop', 'https://shop.test/products.json?limit=250&page=1'), it('shop', 'https://shop.test/products.json?limit=250&page=2'),
+    it('libros', 'https://libros.test/catalogue/page-1.html')];
+  const pasa = await runCode('robots.js', { input: lista, helpers: fake({
+    'https://shop.test/robots.txt': { statusCode: 200, body: 'User-agent: *\nDisallow: /admin\nDisallow: /cart' } }) });
+  assert.deepStrictEqual(pasa.map((x) => x.json.url), lista.map((x) => x.json.url), 'deja pasar los mismos items, en orden');
+  await assert.rejects(runCode('robots.js', { input: lista, helpers: fake({
+    'https://libros.test/robots.txt': { statusCode: 200, body: 'User-agent: *\nDisallow: /catalogue/' } }) }), /no permiten.*libros/);
+  await assert.rejects(runCode('robots.js', { input: lista, helpers: fake({
+    'https://shop.test/robots.txt': { statusCode: 200, body: 'User-agent: *\nAllow: /\n\nUser-agent: DenoroPriceMonitor\nDisallow: /' } }) }), /no permiten.*shop/, 'respeta el grupo de su propio bot');
+  await assert.rejects(runCode('robots.js', { input: lista, helpers: fake({ 'https://shop.test/robots.txt': { statusCode: 503, body: '' } }) }), /No se ha podido comprobar/);
+  await assert.rejects(runCode('robots.js', { input: lista, helpers: fake({ 'https://shop.test/robots.txt': new Error('ETIMEDOUT') }) }), /No se ha podido comprobar/);
+  const allow = await runCode('robots.js', { input: lista, helpers: fake({
+    'https://libros.test/robots.txt': { statusCode: 200, body: 'User-agent: *\nDisallow: /catalogue/\nAllow: /catalogue/page-*.html$' } }) });
+  assert.strictEqual(allow.length, 3, 'la regla más específica gana');
+
   console.log('price-monitor n8n: todos los escenarios OK');
   console.log(demo.json.telegram);
 })().catch((e) => { console.error(e); process.exit(1); });

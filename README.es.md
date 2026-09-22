@@ -15,7 +15,7 @@ Cada aviso incluye un **CSV** (se abre en Excel) con todos los precios actuales.
 - **WooCommerce**: solo necesita la URL (usa la Store API pública).
 - **Cualquier web HTML**: se configuran 4 o 5 selectores CSS.
 
-Es respetuoso y fiable. La versión Python y el panel multi-cliente cumplen `robots.txt`, hacen pausas entre peticiones a la misma web, reintentan ante errores `429/5xx` y se identifican con su propio User-Agent. Todas las versiones **evitan avisar de productos "retirados" si una web carga a medias**; el workflow de n8n de una sola tienda espera 1,5 s entre páginas. Solo lee datos públicos y no personales.
+Es respetuoso y fiable: todas las versiones miran el `robots.txt` antes de leer (el workflow de n8n se para y dice qué fuente quitar), hacen pausas entre peticiones, se identifican con su propio User-Agent y **no avisan de productos "retirados" si una web carga a medias**. La versión Python y el panel multi-cliente además reintentan ante errores `429/5xx`. Solo lee datos públicos y no personales.
 
 ## Opción A: n8n (sin código)
 1. En n8n: **Import from File** → `n8n-workflow.json` y `n8n-error-workflow.json`.

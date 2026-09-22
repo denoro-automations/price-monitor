@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-function runCode(file, { input = [], nodes = {}, staticData = {}, replace = [] } = {}) {
+function runCode(file, { input = [], nodes = {}, staticData = {}, replace = [], helpers = {} } = {}) {
   let code = fs.readFileSync(path.join(__dirname, '..', 'src', file), 'utf8');
   for (const [a, b] of replace) {
     if (!code.includes(a)) throw new Error(`No encuentro en ${file}: ${a}`);
@@ -14,6 +14,6 @@ function runCode(file, { input = [], nodes = {}, staticData = {}, replace = [] }
     return wrap(nodes[name]);
   };
   const fn = new Function('$', '$input', '$getWorkflowStaticData', 'Buffer', 'URL', `return (async () => {${code}\n})();`);
-  return fn($, wrap(input), () => staticData, Buffer, undefined); // n8n no expone URL
+  return fn.call({ helpers }, $, wrap(input), () => staticData, Buffer, undefined); // n8n no expone URL
 }
 module.exports = { runCode };
