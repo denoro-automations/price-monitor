@@ -24,7 +24,7 @@
 
 <template id="tpl">
   <h1 id="title"></h1>
-  <p class="sub">Pega enlaces de tu competencia y te avisamos cuando cambien sus precios o su stock.</p>
+  <p class="sub">Pega enlaces de tu competencia y te aviso cuando cambien sus precios o su stock.</p>
 
   <div class="stats">
     <div class="stat"><b class="num" id="sLinks">0</b><span>enlaces vigilados</span></div>
@@ -42,8 +42,8 @@
           <button class="primary" id="detectBtn" type="submit">Comprobar</button>
         </form>
         <ul class="steps">
-          <li><b>Producto concreto</b> (cualquier tienda): vigilamos su precio y stock. Puedes indicar tu precio para saber si te ganan.</li>
-          <li><b>Tienda entera</b> (Shopify o WooCommerce): pega la página principal o una colección y vigilamos todo su catálogo.</li>
+          <li><b>Producto concreto</b> (cualquier tienda): vigilo su precio y stock. Puedes indicar tu precio para saber si te ganan.</li>
+          <li><b>Tienda entera</b> (Shopify o WooCommerce): pega la página principal o una colección y vigilo todo su catálogo.</li>
         </ul>
         <div id="addMsg"></div>
         <div id="preview"></div>
@@ -174,7 +174,7 @@
 
   async function load() {
     const r = await api('estado');
-    if (!r.ok) { $('app').innerHTML = `<div class="center"><div><h1>No podemos abrir tu panel</h1><p class="sub">${esc(r.error)}</p></div></div>`; $('checkNow').hidden = true; return; }
+    if (!r.ok) { $('app').innerHTML = `<div class="center"><div><h1>No se puede abrir tu panel</h1><p class="sub">${esc(r.error)}</p></div></div>`; $('checkNow').hidden = true; return; }
     const first = !state; state = r;
     if (first) {
       $('app').innerHTML = ''; $('app').append($('tpl').content.cloneNode(true)); bind();
@@ -231,7 +231,7 @@
     });
   });
 
-  if (!token) { $('app').innerHTML = '<div class="center"><div><h1>Falta tu enlace de acceso</h1><p class="sub">Abre el enlace personal que te enviamos desde Denoro.</p></div></div>'; $('checkNow').hidden = true; }
+  if (!token) { $('app').innerHTML = '<div class="center"><div><h1>Falta tu enlace de acceso</h1><p class="sub">Abre el enlace personal que te envié desde Denoro.</p></div></div>'; $('checkNow').hidden = true; }
   else load();
 })();
 </script>
