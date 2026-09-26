@@ -43,6 +43,6 @@ Los resultados se guardan en `data/`: `history.sqlite`, `price_history.csv`, `la
 Cada cliente entra en su panel, pega los enlaces que quiere vigilar y elige dónde recibir los avisos: ver [SAAS.md](SAAS.md).
 
 ## ¿Lo quieres para tu tienda?
-Planes a precio cerrado desde 149 €: hasta 3, 10 o 30 enlaces vigilados (una tienda entera cuenta como uno), avisos por Telegram y email y tu propio panel. El Premium añade el informe semanal de tu tienda en PDF. Detalles y presupuesto: [https://denoro-automations.github.io/](https://denoro-automations.github.io/).
+Planes a precio cerrado desde 149 €: hasta 3, 10 o 30 enlaces vigilados (una tienda entera cuenta como uno), avisos por Telegram y email y tu propio panel. El Premium añade el informe semanal de tu tienda en PDF. Detalles y presupuesto: [https://denoroautomations.com/](https://denoroautomations.com/).
 
 *Los datos de la demo son de books.toscrape.com, una web pública creada para practicar scraping.*

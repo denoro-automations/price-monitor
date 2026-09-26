@@ -85,6 +85,6 @@ n8n-workflow.json, n8n-error-workflow.json
 Each client gets a private panel where they paste the links they want to watch — a whole Shopify/WooCommerce store or single product pages from any shop — and chooses where to get the alerts. See [SAAS.md](SAAS.md) (Spanish).
 
 ## Want this for your store?
-Fixed-price plans from €149: up to 3, 10 or 30 watched links (a whole store counts as one), alerts by Telegram and email, and your own panel. Premium adds a weekly PDF report of your store. Details and quote request: [https://denoro-automations.github.io/](https://denoro-automations.github.io/).
+Fixed-price plans from €149: up to 3, 10 or 30 watched links (a whole store counts as one), alerts by Telegram and email, and your own panel. Premium adds a weekly PDF report of your store. Details and quote request: [https://denoroautomations.com/](https://denoroautomations.com/).
 
 *Demo data comes from books.toscrape.com, a public website built for scraping practice.*
