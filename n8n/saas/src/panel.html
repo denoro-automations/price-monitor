@@ -1,29 +1,30 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" class="js">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#fcfcfa">
 <title>Tu panel · Denoro Automations</title>
 <link rel="icon" href="https://denoroautomations.com/assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <style>/*CSS*/</style>
 </head>
 <body class="app">
 <a class="skip" href="#main">Ir al contenido</a>
-<header>
+<header class="site-header">
   <div class="wrap">
-    <a class="brand" href="https://denoroautomations.com/" target="_blank" rel="noopener"><i aria-hidden="true">D</i>Denoro <span>Automations</span></a>
-    <div class="who"><span class="hint" id="who"></span><a class="btn ghost sm" href="https://denoroautomations.com/#presupuesto" target="_blank" rel="noopener">Escríbeme</a></div>
+    <a class="brand" href="https://denoroautomations.com/" target="_blank" rel="noopener" aria-label="Denoro Automations (abre la web en otra pestaña)"><i aria-hidden="true">D</i>Denoro <span>Automations</span></a>
+    <div class="p-who"><span class="hint" id="who"></span><a class="btn ghost sm" href="mailto:manelfernandezp1@gmail.com?subject=Duda%20sobre%20mi%20panel">Escríbeme</a></div>
   </div>
 </header>
 
-<main id="main"><div class="wrap" id="app"><div class="center"><p class="hint"><span class="spin" aria-hidden="true"></span>&nbsp; Cargando tu panel…</p></div></div></main>
+<main id="main"><div class="wrap" id="app"><div class="p-center"><p class="hint" role="status"><span class="p-spin" aria-hidden="true"></span>&nbsp; Cargando tu panel…</p></div></div></main>
 
-<footer><div class="wrap"><span>© Denoro Automations · Tu panel privado: no compartas este enlace.</span><a href="https://denoroautomations.com/legal.html" target="_blank" rel="noopener">Aviso legal y privacidad</a></div></footer>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<footer><div class="wrap"><span>© Denoro Automations · Este es tu panel privado: no compartas el enlace.</span><a href="https://denoroautomations.com/legal.html" target="_blank" rel="noopener">Aviso legal y privacidad</a></div></footer>
+<div class="p-toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 /*AUTOS*/
@@ -31,11 +32,12 @@
   const API = location.pathname.replace(/\/panel\/?$/, '/api');
   const BOT = '__BOT_USERNAME__';
   const token = new URLSearchParams(location.search).get('t') || '';
+  const TZ_LOCAL = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const TYPES = { shopify_tienda: 'Tienda Shopify', woo_tienda: 'Tienda WooCommerce', shopify_producto: 'Producto · Shopify', woo_producto: 'Producto · WooCommerce', producto: 'Producto' };
-  const money = (v, cur) => v === null || v === undefined ? '—' : new Intl.NumberFormat('es-ES', cur ? { style: 'currency', currency: cur } : { minimumFractionDigits: 2 }).format(v);
-  const fecha = (iso) => new Date(iso).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const money = (v, cur) => { if (v === null || v === undefined || v === '') return '—'; try { return new Intl.NumberFormat('es-ES', cur ? { style: 'currency', currency: cur } : { minimumFractionDigits: 2 }).format(v); } catch (e) { return `${v} ${cur || ''}`; } };
+  const fecha = (iso) => new Date(iso).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' });
   const ago = (iso) => {
     if (!iso) return 'todavía no';
     const m = Math.round((Date.now() - new Date(iso)) / 60000);
@@ -45,45 +47,93 @@
     return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
   };
   const horasTxt = (h) => (h < 1 ? `${Math.round(h * 60)} minutos` : h === 1 ? '1 hora' : `${h} horas`);
+  const ICON_BACK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   let S = null;            // estado del cliente
   let tab = '';
   let pending = null;      // enlace detectado en el monitor, pendiente de confirmar
+  let dirty = false;       // hay cambios sin guardar en la pestaña abierta
+  let tipN = 0;
+  let medirTabs = () => {};
+  window.addEventListener('resize', () => medirTabs());
 
-  function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3600); }
-  const msg = (el, text, kind = 'err') => { if (typeof el === 'string') el = $(el); if (el) el.innerHTML = text ? `<p class="msg ${kind}">${esc(text)}</p>` : ''; };
+  function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3800); }
+  const msg = (el, text, kind = 'err') => { if (typeof el === 'string') el = $(el); if (el) el.innerHTML = text ? `<p class="msg ${kind}" role="${kind === 'err' ? 'alert' : 'status'}">${esc(text)}</p>` : ''; };
   async function api(accion, data = {}) {
     let res;
     try { res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, accion, ...data }) }); }
     catch (e) { return { ok: false, error: 'No hay conexión con el servidor. Inténtalo en un momento.' }; }
-    try { return await res.json(); } catch (e) { return { ok: false, error: `Error del servidor (${res.status})` }; }
+    try { return await res.json(); } catch (e) { return { ok: false, error: `El servidor no ha respondido bien (error ${res.status}). Inténtalo en un momento.` }; }
   }
   async function busy(btn, text, fn) {
-    const html = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="spin" aria-hidden="true"></span> ${esc(text)}`;
-    try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = html; }
+    const html = btn.innerHTML; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.innerHTML = `<span class="p-spin" aria-hidden="true"></span> ${esc(text)}`;
+    try { return await fn(); } finally { btn.disabled = false; btn.removeAttribute('aria-busy'); btn.innerHTML = html; }
+  }
+
+  // ---------------------------------------------------------------- ayuda «i»
+  function tip(clave, label) {
+    const a = Array.isArray(clave) ? clave : null;
+    const [texto, ej] = a || [];
+    if (!texto) return '';
+    const id = `tip-${++tipN}`;
+    return `<span class="p-tip"><button type="button" class="p-tip-btn" aria-label="Ayuda: ${esc(label)}" aria-expanded="false" aria-describedby="${id}">i</button>` +
+      `<span class="p-tip-bubble" role="tooltip" id="${id}">${esc(texto)}${ej ? `<b>Ejemplo</b><span class="ej">${esc(ej)}</span>` : ''}</span></span>`;
+  }
+  const ayuda = (auto, k) => ayudaDe(auto, k);
+  const lbl = (id, texto, ay) => `<div class="p-label"><label for="${id}">${esc(texto)}</label>${tip(ay, texto)}</div>`;
+  function cerrarTips(excepto) { document.querySelectorAll('.p-tip.open').forEach((t) => { if (t !== excepto) { t.classList.remove('open'); t.querySelector('.p-tip-btn').setAttribute('aria-expanded', 'false'); } }); }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('.p-tip-btn');
+    if (b) { e.preventDefault(); const t = b.parentElement; const abrir = !t.classList.contains('open'); cerrarTips(t); t.classList.toggle('open', abrir); t.classList.remove('closed'); b.setAttribute('aria-expanded', String(abrir)); colocar(t); return; }
+    if (!e.target.closest('.p-tip-bubble')) cerrarTips();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const abiertos = document.querySelectorAll('.p-tip.open, .p-tip:hover, .p-tip:focus-within');
+    abiertos.forEach((t) => t.classList.add('closed')); cerrarTips();
+  });
+  document.addEventListener('mouseover', (e) => { const t = e.target.closest('.p-tip'); if (t) colocar(t); });
+  document.addEventListener('focusin', (e) => { const t = e.target.closest('.p-tip'); if (t) colocar(t); });
+  document.addEventListener('mouseout', (e) => { const t = e.target.closest('.p-tip'); if (t && !t.contains(e.relatedTarget)) t.classList.remove('closed'); });
+  document.addEventListener('focusout', (e) => { const t = e.target.closest('.p-tip'); if (t && !t.contains(e.relatedTarget)) { t.classList.remove('closed'); } });
+  function colocar(t) {   // la burbuja no se sale nunca de la pantalla; la flecha sigue apuntando a la «i»
+    const b = t.querySelector('.p-tip-bubble'); if (!b) return;
+    const r = t.getBoundingClientRect(); const vw = document.documentElement.clientWidth;
+    const w = Math.min(320, vw - 32);
+    let left = -8;
+    if (r.left + left + w > vw - 16) left = vw - 16 - w - r.left;
+    if (r.left + left < 16) left = 16 - r.left;
+    b.style.left = `${left}px`; b.style.setProperty('--flecha', `${Math.max(8, r.width / 2 - left - 5)}px`);
   }
 
   // ---------------------------------------------------------------- estado de cada automatización
   const servicio = (id) => S.servicios.find((s) => s.id === id);
+  const enCurso = (e) => e?.en_curso && Date.now() - new Date(e.en_curso).getTime() < EN_CURSO_MS;
+  const sinAvisos = () => !S.cliente.email && !S.cliente.telegram_chat_id;
   function estadoAuto(s) {
     if (s.id === 'monitor') {
       const r = s.estado;
-      if (!S.vigilancias.length) return { cls: 'info', txt: 'Añade tu primer enlace', dot: 'info' };
-      if (!r) return { cls: 'info', txt: 'Primera revisión pendiente', dot: 'info' };
+      if (!S.vigilancias.length) return { cls: 'info', txt: 'Añade tu primer enlace', dot: '' };
+      if (!r) return { cls: 'info', txt: 'Primera revisión pendiente', dot: '' };
       if (r.con_error > 0) return { cls: 'bad', txt: `${r.con_error} enlace${r.con_error > 1 ? 's' : ''} con error`, dot: 'bad' };
       return { cls: 'ok', txt: 'Vigilando', dot: 'ok' };
     }
     const e = s.estado;
-    if (!e) return { cls: 'info', txt: 'Sin ejecutar todavía', dot: 'info' };
-    if (e.ok === false) return { cls: 'bad', txt: 'Falló la última pasada', dot: 'bad' };
+    if (enCurso(e)) return { cls: 'run', txt: 'Ejecutándose ahora…', dot: 'run' };
+    if (sinAvisos()) return { cls: 'bad', txt: 'Parada: falta dónde avisarte', dot: 'bad' };
+    if (!e) return { cls: 'info', txt: 'Sin ejecutar todavía', dot: '' };
+    if (e.ok === false) return { cls: 'bad', txt: 'Falló la última vez', dot: 'bad' };
     return { cls: 'ok', txt: e.demo ? 'Funcionando · datos de ejemplo' : 'Funcionando', dot: 'ok' };
   }
+  const horaEsp = () => (TZ_LOCAL && TZ_LOCAL !== 'Europe/Madrid' ? ' (hora de España)' : '');
   function cadaTxt(a, aj) {
-    if (a.cada.tipo === 'horas') return `Cada ${horasTxt(Number(aj.cada_horas || a.cada.def))}${a.cada.semanal && aj[a.cada.semanal.campo] !== false ? ` · ${a.cada.semanal.texto}` : ''}`;
-    if (a.cada.tipo === 'semanal') return a.cada.opcional && aj.programado === false ? 'Solo cuando pulses «Ejecutar ahora»' : a.cada.texto;
+    if (a.cada.tipo === 'horas') return `Cada ${horasTxt(Number(aj.cada_horas || a.cada.def))}${a.cada.semanal && aj[a.cada.semanal.campo] !== false ? ` · ${a.cada.semanal.texto}${horaEsp()}` : ''}`;
+    if (a.cada.tipo === 'semanal') return a.cada.opcional && aj.programado === false ? 'Solo cuando pulses «Ejecutar ahora»' : `${a.cada.texto}${horaEsp()}`;
     return `Cada ${horasTxt(S.ajustes.frecuencia_horas)}`;
   }
   function proxima(a, s) {
     const aj = s.ajustes || {};
+    if (sinAvisos()) return 'Cuando pongas dónde avisarte';
+    if (enCurso(s.estado)) return 'Ahora mismo';
     if (a.cada.tipo === 'horas') {
       const u = s.estado?.ultima; const h = Number(aj.cada_horas || a.cada.def);
       if (!u) return 'En la próxima media hora';
@@ -92,123 +142,151 @@
     }
     if (a.cada.tipo === 'semanal') {
       if (a.cada.opcional && aj.programado === false) return 'Cuando tú la lances';
-      const cita = ultimaCitaSemanal(Date.now(), a.cada.dia, a.cada.hora) + 7 * 86400000;
-      return fecha(new Date(cita).toISOString());
+      return fecha(new Date(ultimaCitaSemanal(Date.now(), a.cada.dia, a.cada.hora) + 7 * 86400000).toISOString());
     }
     return '';
   }
   const origenTxt = (aj) => {
     const vals = [aj.fuente, aj.destino].filter(Boolean);
     if (!vals.length) return '';
-    return vals.every((v) => v === 'demo') ? 'Datos de ejemplo' : vals.includes('demo') ? 'Mezcla: ejemplo y reales' : 'Tus datos reales';
+    return vals.every((v) => v === 'demo') ? 'Datos de ejemplo' : vals.includes('demo') ? 'Mezcla de ejemplo y reales' : 'Tus datos reales';
   };
 
   // ---------------------------------------------------------------- estructura
   function shell() {
-    const activas = S.servicios.length;
-    const avisos = [S.cliente.email, S.cliente.telegram_chat_id ? 'Telegram' : ''].filter(Boolean).join(' · ') || 'Sin configurar';
+    const avisos = [S.cliente.email, S.cliente.telegram_chat_id ? 'Telegram' : ''].filter(Boolean).join(' · ');
     const ultimas = S.servicios.map((s) => s.estado?.ultima).filter(Boolean).sort().reverse();
     $('who').textContent = S.cliente.nombre;
     $('app').innerHTML = `
       <div class="p-hero">
         <p class="eyebrow">Tu panel · Denoro Automations</p>
         <h1>${esc(S.cliente.nombre)}</h1>
-        <p class="lead">Aquí ves qué hace cada automatización y la ajustas tú. Los cambios se aplican en la siguiente pasada; si quieres verlo ya, pulsa «Ejecutar ahora».</p>
-        <dl class="facts">
-          <div><dt>Automatizaciones</dt><dd><span class="big num">${activas}</span></dd></div>
+        <p class="lead">Aquí ves qué hace cada automatización y la ajustas tú. Los cambios se aplican en la siguiente pasada; para verlo al momento, pulsa «Ejecutar ahora».</p>
+        <dl class="p-facts">
+          <div><dt>Automatizaciones</dt><dd><span class="p-big num">${S.servicios.length}</span></dd></div>
           <div><dt>Última actividad</dt><dd>${esc(ultimas[0] ? ago(ultimas[0]) : 'todavía ninguna')}</dd></div>
-          <div><dt>Avisos a</dt><dd>${esc(avisos)}</dd></div>
+          <div><dt>Avisos a</dt><dd>${avisos ? esc(avisos) : '<button type="button" class="p-linkbtn" data-go="avisos">Configúralos aquí</button>'}</dd></div>
         </dl>
       </div>
-      <div class="tabs" role="tablist" aria-label="Secciones del panel" id="tabs"></div>
+      <div class="p-tabs-bar"><div class="p-tabs" role="tablist" aria-label="Secciones de tu panel" id="tabs"></div></div>
       <div role="tabpanel" id="panel" tabindex="-1"></div>`;
     renderTabs();
+    const bar = document.querySelector('.p-tabs-bar'); const tl = $('tabs');
+    const medir = () => { bar.classList.toggle('overflow', tl.scrollWidth > tl.clientWidth + 2); bar.classList.toggle('at-end', tl.scrollLeft + tl.clientWidth >= tl.scrollWidth - 4); };
+    tl.addEventListener('scroll', medir, { passive: true }); medirTabs = medir; requestAnimationFrame(medir);
   }
   function renderTabs() {
-    const items = [['resumen', 'Resumen', '']].concat(S.servicios.map((s) => [s.id, AUTO[s.id].corto, estadoAuto(s).dot]), [['avisos', 'Avisos', S.cliente.email || S.cliente.telegram_chat_id ? '' : 'bad']]);
-    $('tabs').innerHTML = items.map(([id, name, dot]) => `<button class="tab" role="tab" id="tab-${id}" aria-controls="panel" aria-selected="${id === tab}" data-tab="${id}">${dot ? `<span class="dot ${dot}" aria-hidden="true"></span>` : ''}${esc(name)}</button>`).join('');
+    const items = [['resumen', 'Resumen', '', '']]
+      .concat(S.servicios.map((s) => { const st = estadoAuto(s); return [s.id, AUTO[s.id].corto, st.dot, st.txt]; }),
+        [['avisos', 'Avisos', sinAvisos() ? 'bad' : '', sinAvisos() ? 'sin configurar' : '']]);
+    $('tabs').innerHTML = items.map(([id, name, dot, estado]) => `<button type="button" class="p-tab" role="tab" id="tab-${id}" aria-controls="panel" aria-selected="${id === tab}" tabindex="${id === tab ? 0 : -1}" data-tab="${id}">` +
+      `${dot ? `<span class="p-dot ${dot}" aria-hidden="true"></span>` : ''}${esc(name)}${estado && dot ? `<span class="sr-only"> (${esc(estado)})</span>` : ''}</button>`).join('');
   }
-  function go(id, focus) {
-    const valid = ['resumen', 'avisos', ...S.servicios.map((s) => s.id)];
-    tab = valid.includes(id) ? id : 'resumen';
+  function orden() { return ['resumen', ...S.servicios.map((s) => s.id), 'avisos']; }
+  function nombreDe(id) { return id === 'resumen' ? 'Resumen' : id === 'avisos' ? 'Avisos' : AUTO[id].nombre; }
+  function go(id, opts = {}) {
+    const valid = orden();
+    const nuevo = valid.includes(id) ? id : 'resumen';
+    if (dirty && nuevo !== tab && !opts.forzar && !confirm('Tienes cambios sin guardar en esta pestaña. ¿Salir sin guardarlos?')) {
+      $(`tab-${tab}`)?.focus(); return;
+    }
+    dirty = false; tab = nuevo; pending = null;
     if (location.hash.slice(1) !== tab) history.replaceState(null, '', `#${tab}`);
+    document.title = `${tab === 'resumen' ? 'Tu panel' : nombreDe(tab)} · ${S.cliente.nombre} · Denoro`;
     renderTabs();
+    $(`tab-${tab}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     const p = $('panel');
     p.setAttribute('aria-labelledby', `tab-${tab}`);
     if (tab === 'resumen') renderResumen(p);
     else if (tab === 'avisos') renderAvisos(p);
     else if (tab === 'monitor') renderMonitor(p);
     else renderAuto(p, tab);
-    if (focus) { $(`tab-${tab}`)?.scrollIntoView({ block: 'nearest', inline: 'center' }); window.scrollTo({ top: Math.min(window.scrollY, $('tabs').offsetTop - 68), behavior: 'smooth' }); }
+    if (opts.scroll) {
+      const bar = document.querySelector('.p-tabs-bar');
+      const top = bar.getBoundingClientRect().top + window.scrollY - 68;
+      if (window.scrollY > top) window.scrollTo({ top, behavior: 'smooth' });
+      $(`tab-${tab}`)?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    }
+    if (opts.focus) p.focus({ preventScroll: true });
+  }
+  // Migas y navegación de abajo: «volver al resumen» siempre a mano
+  function migas(id) {
+    return `<nav class="p-crumbs" aria-label="Estás en"><button type="button" class="p-back" data-go="resumen">${ICON_BACK}Volver al resumen</button>` +
+      `<span class="sep" aria-hidden="true">/</span><b aria-current="page">${esc(nombreDe(id))}</b></nav>`;
+  }
+  function pie(id) {
+    const o = orden(); const i = o.indexOf(id); const sig = o[i + 1];
+    return `<nav class="p-foot-nav" aria-label="Más secciones"><button type="button" class="p-back" data-go="resumen">${ICON_BACK}Volver al resumen</button>` +
+      `${sig ? `<button type="button" class="btn ghost sm" data-go="${sig}">Siguiente: ${esc(nombreDe(sig))} →</button>` : ''}</nav>`;
   }
 
   // ---------------------------------------------------------------- resumen
   function renderResumen(p) {
-    const sinAvisos = !S.cliente.email && !S.cliente.telegram_chat_id;
     const cards = S.servicios.map((s) => {
-      const a = AUTO[s.id]; const st = estadoAuto(s);
-      const aj = s.ajustes || {};
-      const ult = s.id === 'monitor' ? s.estado?.ultima : s.estado?.ultima;
+      const a = AUTO[s.id]; const st = estadoAuto(s); const aj = s.ajustes || {};
       const linea = s.id === 'monitor'
         ? `${S.vigilancias.length} de ${S.ajustes.max_vigilancias} enlaces vigilados${s.estado?.cambios !== undefined ? ` · ${s.estado.cambios} cambios en la última revisión` : ''}`
         : s.estado?.ok === false ? s.estado.error : (s.estado?.titulo || a.resumen);
-      return `<article class="auto">
+      return `<article class="p-auto">
         <p class="eyebrow">${esc(a.cat)}</p>
         <h2>${esc(a.nombre)}</h2>
-        <div class="auto-state"><span class="badge ${st.cls}">${esc(st.txt)}</span></div>
+        <div class="p-state"><span class="badge ${st.cls}">${esc(st.txt)}</span></div>
         <p>${esc(linea)}</p>
-        <dl class="auto-meta">
-          <div><dt>Cada</dt><dd>${esc(cadaTxt(a, aj))}</dd></div>
-          <div><dt>Última</dt><dd>${esc(ult ? ago(ult) : 'todavía no')}</dd></div>
+        <dl class="p-meta">
+          <div><dt>Cuándo</dt><dd>${esc(cadaTxt(a, aj))}</dd></div>
+          <div><dt>Última vez</dt><dd>${esc(ago(s.estado?.ultima))}</dd></div>
           ${s.id !== 'monitor' && origenTxt(aj) ? `<div><dt>Datos</dt><dd>${esc(origenTxt(aj))}</dd></div>` : ''}
         </dl>
-        <button type="button" class="link-arrow" data-go="${a.id}">${s.id === 'monitor' ? 'Ver y añadir enlaces' : 'Ajustar y ver resultados'}</button>
+        <button type="button" class="btn sm" data-go="${a.id}">${s.id === 'monitor' ? 'Ver y añadir enlaces' : 'Abrir y ajustar'} →</button>
       </article>`;
     }).join('');
-    p.innerHTML = `${sinAvisos ? `<p class="msg err" style="margin:0 0 var(--s5)">Aún no me has dicho dónde avisarte. <button type="button" class="link-arrow" data-go="avisos" style="background:none;border:0;border-bottom:1px solid;cursor:pointer;color:inherit;font:inherit">Pon tu email o tu Telegram</button></p>` : ''}
-      <div class="autos panel">${cards}</div>`;
+    p.innerHTML = `${sinAvisos() ? `<p class="msg err" role="alert" style="margin:0 0 var(--s5)">Tus automatizaciones están paradas porque aún no sé dónde avisarte. <button type="button" class="p-linkbtn" data-go="avisos">Pon tu email o tu Telegram</button>.</p>` : ''}
+      <div class="p-autos">${cards}</div>`;
   }
 
   // ---------------------------------------------------------------- campos de un formulario
   const conectada = (need) => !need || (S.conexiones || []).includes(need);
-  function campo(f, v, pre) {
-    const id = `${pre}-${f.k}`;
-    const hint = f.hint ? `<p class="hint">${esc(f.hint)}</p>` : '';
-    const wide = ['bool', 'pasos', 'sitios', 'obj', 'lista'].includes(f.t) || f.t === 'url' || (f.label || '').length > 34 ? ' full' : '';
+  function campo(auto, f, v) {
+    const id = `x-${f.k}`;
+    const ay = ayuda(auto, f.k);
+    const hint = f.hint ? `<p class="hint" id="${id}-h">${esc(f.hint)}</p>` : '';
+    const desc = f.hint ? ` aria-describedby="${id}-h"` : '';
+    const wide = ['bool', 'pasos', 'sitios', 'obj', 'lista', 'url'].includes(f.t) || (f.label || '').length > 34 ? ' full' : '';
     const show = f.show ? ` data-show='${esc(JSON.stringify(f.show))}'` : '';
-    if (f.t === 'bool') return `<div class="field full"${show}><label class="check"><input type="checkbox" name="${f.k}" id="${id}"${v ? ' checked' : ''}> <span>${esc(f.label)}${f.hint ? `<small>${esc(f.hint)}</small>` : ''}</span></label></div>`;
+    if (f.t === 'bool') return `<div class="field full"${show}><div class="p-check"><label><input type="checkbox" name="${f.k}" id="${id}"${v ? ' checked' : ''}> <span>${esc(f.label)}${f.hint ? `<small>${esc(f.hint)}</small>` : ''}</span></label>${tip(ay, f.label)}</div></div>`;
     if (f.t === 'select') {
       const opts = f.opts.map(([val, label, x]) => {
-        const need = x?.conexion; const ok = conectada(need);
-        return `<option value="${esc(val)}"${val === v ? ' selected' : ''}${ok ? '' : ' disabled'}>${esc(label)}${ok ? '' : ' · la conecto yo'}</option>`;
+        const need = x?.conexion; const inst = !!x?.instalada; const ok = conectada(need) && !inst;
+        const nota = inst ? ' (se instala en tu tienda)' : ok ? '' : ' (la conecto yo)';
+        return `<option value="${esc(val)}"${val === v ? ' selected' : ''}${ok || val === v ? '' : ' disabled'}>${esc(label)}${nota}</option>`;
       }).join('');
-      return `<div class="field${wide}"${show}><label for="${id}">${esc(f.label)}</label><select name="${f.k}" id="${id}">${opts}</select>${hint}</div>`;
+      return `<div class="field${wide}"${show}>${lbl(id, f.label, ay)}<select name="${f.k}" id="${id}"${desc}>${opts}</select>${hint}</div>`;
     }
     if (f.t === 'obj') {
       const val = v || {};
-      return `<div class="field full"${show}><p class="hint" style="margin:0 0 var(--s3)">${esc(f.hint || '')}</p><div class="fgrid" data-obj="${f.k}">${f.campos.map((s) => `
-        <div class="field"><label for="${id}-${s.k}">${esc(s.label)}</label><input id="${id}-${s.k}" data-k="${s.k}" type="${s.t === 'email' ? 'email' : 'text'}" value="${esc(val[s.k] || '')}" maxlength="${s.max || 120}"></div>`).join('')}</div></div>`;
+      return `<div class="field full"${show}><div class="p-label"><span class="hint" style="margin:0">${esc(f.hint || '')}</span>${tip(ay, f.label)}</div><div class="p-fgrid" data-obj="${f.k}">${f.campos.map((s) => `
+        <div class="field">${lbl(`${id}-${s.k}`, s.label, ayuda('emisor', s.k))}<input id="${id}-${s.k}" data-k="${s.k}" type="${s.t === 'email' ? 'email' : 'text'}" value="${esc(val[s.k] || '')}" maxlength="${s.max || 120}" autocomplete="off"></div>`).join('')}</div></div>`;
     }
-    if (f.t === 'pasos') return `<div class="field full"${show} data-list="pasos" data-k="${f.k}">${(v || []).map((x, i) => pasoHtml(x, i)).join('')}
-      <button type="button" class="btn sm" data-add="paso" style="margin-top:var(--s3)">Añadir un aviso</button></div>`;
-    if (f.t === 'sitios') return `<div class="field full"${show} data-list="sitios" data-k="${f.k}">${hint}${(v || []).map((x, i) => sitioHtml(x, i)).join('')}
-      <button type="button" class="btn sm" data-add="sitio" style="margin-top:var(--s3)">Añadir una página</button></div>`;
+    if (f.t === 'pasos') return `<div class="field full"${show} data-list="pasos" data-k="${f.k}"><div class="p-label"><span class="hint" style="margin:0">Hasta cinco avisos, de menos a más horas.</span>${tip(ay, f.label)}</div>${(v || []).map((x, i) => pasoHtml(x, i)).join('')}
+      <button type="button" class="btn sm" data-add="paso" style="margin-top:var(--s3)">+ Añadir un aviso</button></div>`;
+    if (f.t === 'sitios') return `<div class="field full"${show} data-list="sitios" data-k="${f.k}"><div class="p-label"><span class="hint" style="margin:0">${esc(f.hint || '')}</span>${tip(ay, f.label)}</div>${(v || []).map((x, i) => sitioHtml(x, i)).join('')}
+      <button type="button" class="btn sm" data-add="sitio" style="margin-top:var(--s3)">+ Añadir una página</button></div>`;
     const type = { url: 'url', email: 'email', number: 'number', color: 'color' }[f.t] || 'text';
     const val = f.t === 'lista' ? (v || []).join(', ') : v ?? '';
     const extra = f.t === 'number' ? ` inputmode="decimal" step="any"${f.min !== undefined ? ` min="${f.min}"` : ''}${f.max !== undefined ? ` max="${f.max}"` : ''}` : f.max ? ` maxlength="${f.max}"` : '';
-    const ph = f.t === 'url' ? ' placeholder="https://"' : '';
-    return `<div class="field${wide}"${show}><label for="${id}">${esc(f.label)}</label><input name="${f.k}" id="${id}" type="${type}" value="${esc(val)}"${extra}${ph}>${hint}</div>`;
+    const ph = f.t === 'url' ? ' placeholder="https://" spellcheck="false"' : f.t === 'email' ? ' spellcheck="false"' : '';
+    return `<div class="field${wide}"${show}>${lbl(id, f.label, ay)}<input name="${f.k}" id="${id}" type="${type}" value="${esc(val)}"${extra}${ph}${desc} autocomplete="off">${hint}</div>`;
   }
-  const pasoHtml = (x, i) => `<div class="subform" data-item>
-      <div class="subform-head"><b>Aviso ${i + 1}</b><button type="button" class="btn ghost sm danger" data-del>Quitar</button></div>
-      <div class="fgrid">
-        <div class="field"><label>Horas desde el abandono</label><input data-k="horas" type="number" min="0" max="2000" step="any" value="${esc(x.horas ?? '')}"></div>
-        <div class="field"><label>Cupón (opcional)</label><input data-k="cupon" value="${esc(x.cupon || '')}" maxlength="30"></div>
-        <div class="field full"><label>Asunto del email</label><input data-k="asunto" value="${esc(x.asunto || '')}" maxlength="120"></div>
-      </div></div>`;
-  const sitioHtml = (x, i) => `<div class="subform" data-item>
-      <div class="subform-head"><b>Página ${i + 1}</b><button type="button" class="btn ghost sm danger" data-del>Quitar</button></div>
-      <div class="fgrid">${CAMPOS_SITIO.map(([k, label, req]) => `<div class="field${k === 'url' ? ' full' : ''}"><label>${esc(label)}${req ? '' : ' (opcional)'}</label><input data-k="${k}" value="${esc(x[k] || '')}"${k === 'url' ? ' type="url" placeholder="https://"' : ''}></div>`).join('')}</div></div>`;
+  const pasoHtml = (x, i) => { const b = `paso${i}-${Date.now() % 100000}`; return `<div class="p-sub" data-item>
+      <div class="p-sub-head"><b>Aviso ${i + 1}</b><button type="button" class="btn ghost sm danger" data-del>Quitar</button></div>
+      <div class="p-fgrid">
+        <div class="field">${lbl(`${b}-h`, 'Horas desde el abandono', ayuda('carritos', 'horas'))}<input id="${b}-h" data-k="horas" type="number" min="0" max="2000" step="any" inputmode="decimal" value="${esc(x.horas ?? '')}"></div>
+        <div class="field">${lbl(`${b}-c`, 'Cupón (opcional)', ayuda('carritos', 'cupon'))}<input id="${b}-c" data-k="cupon" value="${esc(x.cupon || '')}" maxlength="30" autocomplete="off" spellcheck="false"></div>
+        <div class="field full">${lbl(`${b}-a`, 'Asunto del email', ayuda('carritos', 'asunto'))}<input id="${b}-a" data-k="asunto" value="${esc(x.asunto || '')}" maxlength="120"></div>
+      </div></div>`; };
+  const sitioHtml = (x, i) => { const b = `sitio${i}-${Date.now() % 100000}`; return `<div class="p-sub" data-item>
+      <div class="p-sub-head"><b>Página ${i + 1}</b><button type="button" class="btn ghost sm danger" data-del>Quitar</button></div>
+      <div class="p-fgrid">${CAMPOS_SITIO.map(([k, label, req]) => `<div class="field${k === 'url' ? ' full' : ''}">${lbl(`${b}-${k}`, `${label}${req ? '' : ' (opcional)'}`, ayuda('sitio', k))}<input id="${b}-${k}" data-k="${k}" value="${esc(x[k] || '')}"${k === 'url' ? ' type="url" placeholder="https://"' : ''} spellcheck="false" autocomplete="off"></div>`).join('')}</div></div>`; };
 
   function leerForm(form, a) {
     const out = {};
@@ -231,7 +309,15 @@
     });
     const demo = [vals.fuente, vals.destino].filter(Boolean);
     const aviso = form.querySelector('[data-demo]');
-    if (aviso) aviso.hidden = !demo.length || !demo.includes('demo');
+    if (aviso) aviso.hidden = !demo.includes('demo');
+  }
+  // Señala el campo del que habla el error (por su etiqueta entre «»)
+  function marcarError(form, texto) {
+    form.querySelectorAll('[aria-invalid]').forEach((x) => x.removeAttribute('aria-invalid'));
+    const m = /«([^»]+)»/.exec(texto || ''); if (!m) return;
+    const label = [...form.querySelectorAll('label')].find((l) => l.textContent.trim() === m[1] && l.htmlFor);
+    const input = label && document.getElementById(label.htmlFor);
+    if (input && !input.closest('[hidden]')) { input.setAttribute('aria-invalid', 'true'); input.focus({ preventScroll: false }); }
   }
 
   // ---------------------------------------------------------------- pestaña de una automatización
@@ -240,64 +326,65 @@
     const grupos = []; let g = null;
     for (const f of a.campos) { if (f.g) { g = { t: f.g, f: [] }; grupos.push(g); } else g.f.push(f); }
     let cuando = '';
-    if (a.cada.tipo === 'horas') cuando = `<div class="field"><label for="x-cada">Frecuencia</label><select name="cada_horas" id="x-cada">${a.cada.opts.map((h) => `<option value="${h}"${Number(aj.cada_horas) === h ? ' selected' : ''}>Cada ${horasTxt(h)}</option>`).join('')}</select></div>`;
-    else if (a.cada.opcional) cuando = `<div class="field full"><label class="check"><input type="checkbox" name="programado"${aj.programado !== false ? ' checked' : ''}> <span>Ejecutarla sola ${esc(a.cada.texto.toLowerCase())}<small>Si la desmarcas, solo se ejecuta cuando pulses «Ejecutar ahora».</small></span></label></div>`;
-    else cuando = `<div class="field full"><p class="hint" style="margin:0">Se ejecuta sola: ${esc(a.cada.texto.toLowerCase())}.</p></div>`;
+    if (a.cada.tipo === 'horas') cuando = `<div class="field">${lbl('x-cada', 'Frecuencia', ayuda(id, 'cada_horas'))}<select name="cada_horas" id="x-cada">${a.cada.opts.map((h) => `<option value="${h}"${Number(aj.cada_horas) === h ? ' selected' : ''}>Cada ${horasTxt(h)}</option>`).join('')}</select></div>`;
+    else if (a.cada.opcional) cuando = `<div class="field full"><div class="p-check"><label><input type="checkbox" name="programado" id="x-programado"${aj.programado !== false ? ' checked' : ''}> <span>Que se ejecute sola ${esc(a.cada.texto.toLowerCase())}${horaEsp()}<small>Si la desmarcas, solo se ejecuta cuando pulses «Ejecutar ahora».</small></span></label>${tip(ayuda(id, 'programado'), 'Ejecución automática')}</div></div>`;
+    else cuando = `<div class="field full"><p class="hint" style="margin:0">Se ejecuta sola: ${esc(a.cada.texto.toLowerCase())}${horaEsp()}.</p></div>`;
     const res = s.estado; const resR = s.estado_resumen;
-    const resultado = (r, titulo) => r ? `<div class="p-card result">
+    const resultado = (r, titulo) => (r && (r.ultima || r.error) ? `<div class="p-card p-result">
         <p class="eyebrow">${esc(titulo)}</p>
-        ${r.ok === false ? `<p class="msg err" style="margin:0">${esc(r.error || 'Error')}</p><p class="note">${esc(fecha(r.ultima))}. Si no sabes qué hacer, escríbeme y lo miro.</p>`
+        ${r.ok === false ? `<p class="msg err" style="margin:0">${esc(r.error || 'Error desconocido')}</p><p class="p-note">${esc(fecha(r.ultima))}. Si no sabes qué hacer, <a href="mailto:manelfernandezp1@gmail.com?subject=${encodeURIComponent('Error en ' + a.nombre)}">escríbeme</a> y lo miro.</p>`
         : `<div class="tg"><div class="tg-head"><i aria-hidden="true">D</i><div><b>${esc(r.titulo || 'Hecho')}</b><span>${esc(fecha(r.ultima))}${r.avisado ? ' · enviado a tus avisos' : ' · sin aviso: nada que contar'}</span></div></div>
-           ${r.texto ? `<div class="tg-msg">${esc(r.texto)}</div>` : ''}</div>`}</div>` : '';
-    p.innerHTML = `<div class="p-grid">
+           ${r.texto ? `<div class="tg-msg" tabindex="0" aria-label="Detalle del resultado">${esc(r.texto)}</div>` : ''}</div>`}</div>` : '');
+    const corriendo = enCurso(res);
+    p.innerHTML = `${migas(id)}<div class="p-grid">
       <form class="p-card" id="autoForm" novalidate>
         <p class="eyebrow">${esc(a.cat)}</p>
         <h2>${esc(a.nombre)}</h2>
         <p>${esc(a.resumen)}</p>
-        <p class="msg warn" data-demo hidden style="margin-bottom:var(--s5)">Está en modo prueba con datos de ejemplo: puedes ejecutarla y ver el resultado sin tocar nada real. Cuando quieras usar tus datos, cambia la fuente.</p>
-        ${grupos.map((gr) => `<fieldset><legend>${esc(gr.t)}</legend><div class="fgrid">${gr.f.map((f) => campo(f, aj[f.k], 'x')).join('')}</div></fieldset>`).join('')}
-        <fieldset><legend>Cuándo</legend><div class="fgrid">${cuando}</div></fieldset>
-        <div class="actions"><button class="btn primary" id="saveAuto">Guardar cambios</button><span class="hint" id="dirty"></span></div>
-        <div id="autoMsg"></div>
+        <p class="msg warn" data-demo hidden style="margin-bottom:var(--s5)">Modo prueba: usa datos de ejemplo y los avisos te llegan a ti. Puedes ejecutarla y ver el resultado sin tocar nada real. Cuando quieras usar tus datos, cambia la fuente.</p>
+        ${grupos.map((gr) => `<fieldset><legend>${esc(gr.t)}</legend><div class="p-fgrid">${gr.f.map((f) => campo(id, f, aj[f.k])).join('')}</div></fieldset>`).join('')}
+        <fieldset><legend>Cuándo</legend><div class="p-fgrid">${cuando}</div></fieldset>
+        <div class="p-sticky-save"><div class="p-actions" style="margin:0"><button class="btn primary" id="saveAuto">Guardar cambios</button><span class="p-dirty" id="dirty" hidden>Cambios sin guardar</span></div><div id="autoMsg"></div></div>
       </form>
       <aside class="p-side">
         <div class="p-card sunk">
           <p class="eyebrow">Estado</p>
           <span class="badge ${st.cls}">${esc(st.txt)}</span>
-          <dl class="facts tight">
+          <dl class="p-meta">
             <div><dt>Cuándo</dt><dd>${esc(cadaTxt(a, aj))}</dd></div>
-            <div><dt>Última</dt><dd>${esc(res?.ultima ? ago(res.ultima) : 'todavía no')}</dd></div>
+            <div><dt>Última vez</dt><dd>${esc(ago(res?.ultima))}</dd></div>
             <div><dt>Próxima</dt><dd>${esc(proxima(a, s))}</dd></div>
           </dl>
-          <div class="actions" style="margin-top:var(--s4)">
-            <button type="button" class="btn primary full" id="runAuto">Ejecutar ahora</button>
+          ${sinAvisos() ? `<p class="msg err" style="margin-top:var(--s4)">No se ejecuta hasta que pongas <button type="button" class="p-linkbtn" data-go="avisos">dónde avisarte</button>.</p>` : ''}
+          <div class="p-actions" style="margin-top:var(--s4)">
+            <button type="button" class="btn primary full" id="runAuto"${corriendo ? ' disabled' : ''}>${corriendo ? 'Ejecutándose…' : 'Ejecutar ahora'}</button>
             ${a.cada.semanal ? `<button type="button" class="btn full" id="runResumen">Enviar el resumen semanal ahora</button>` : ''}
           </div>
-          <p class="note">Usa lo que tengas guardado. El resultado sale aquí y te llega ${S.cliente.email || S.cliente.telegram_chat_id ? 'a tus avisos' : '(cuando configures tus avisos)'}.</p>
-          <div id="runMsg"></div>
+          <p class="p-note">Usa los ajustes guardados. El resultado aparece aquí debajo${sinAvisos() ? '' : ' y te llega a tus avisos'}.</p>
+          <div id="runMsg" aria-live="polite"></div>
         </div>
         ${resultado(res, 'Último resultado')}
         ${resultado(resR, 'Último resumen semanal')}
       </aside>
-    </div>`;
+    </div>${pie(id)}`;
     const form = $('autoForm');
     aplicarVisibilidad(form);
-    let dirty = false;
-    const marcar = () => { if (!dirty) { dirty = true; $('dirty').textContent = 'Cambios sin guardar'; } };
+    const marcar = () => { if (!dirty) { dirty = true; $('dirty').hidden = false; } };
     form.addEventListener('input', marcar);
-    form.addEventListener('change', () => { marcar(); aplicarVisibilidad(form); });
+    form.addEventListener('change', (e) => { marcar(); aplicarVisibilidad(form); if (e.target.hasAttribute('aria-invalid')) e.target.removeAttribute('aria-invalid'); });
     form.addEventListener('click', (e) => {
       const add = e.target.closest('[data-add]');
       if (add) {
         const box = add.parentElement; const n = box.querySelectorAll('[data-item]').length;
         if (n >= 5) return toast('Como mucho cinco');
         add.insertAdjacentHTML('beforebegin', add.dataset.add === 'paso' ? pasoHtml({ horas: '', asunto: '', cupon: '' }, n) : sitioHtml({}, n));
+        add.previousElementSibling.querySelector('input')?.focus();
         marcar(); return;
       }
       const del = e.target.closest('[data-del]');
       if (del) {
         const box = del.closest('[data-list]'); del.closest('[data-item]').remove();
-        box.querySelectorAll('[data-item] .subform-head b').forEach((b, i) => { b.textContent = `${box.dataset.list === 'pasos' ? 'Aviso' : 'Página'} ${i + 1}`; });
+        box.querySelectorAll('[data-item] .p-sub-head b').forEach((b, i) => { b.textContent = `${box.dataset.list === 'pasos' ? 'Aviso' : 'Página'} ${i + 1}`; });
         marcar();
       }
     });
@@ -305,8 +392,9 @@
       e.preventDefault(); msg('autoMsg', '');
       await busy($('saveAuto'), 'Guardando', async () => {
         const r = await api('auto_guardar', { id, ajustes: leerForm(form, a) });
-        if (!r.ok) return msg('autoMsg', r.error);
-        s.ajustes = r.ajustes; dirty = false; $('dirty').textContent = '';
+        if (!r.ok) { msg('autoMsg', r.error); marcarError(form, r.error); return; }
+        s.ajustes = r.ajustes; dirty = false; $('dirty').hidden = true;
+        form.querySelectorAll('[aria-invalid]').forEach((x) => x.removeAttribute('aria-invalid'));
         msg('autoMsg', r.mensaje || 'Guardado', 'ok');
         toast('Cambios guardados');
       });
@@ -329,24 +417,26 @@
     const s = servicio('monitor'); const r = s.estado || S.resumen; const st = estadoAuto(s);
     const w = S.vigilancias; const aj = S.ajustes;
     const productos = w.reduce((n, x) => n + (x.estado?.productos || 0), 0);
-    p.innerHTML = `<div class="p-grid">
+    const lleno = w.length >= aj.max_vigilancias;
+    p.innerHTML = `${migas('monitor')}<div class="p-grid">
       <div>
         <div class="p-card">
-          <div class="card-head"><div><p class="eyebrow" style="margin-bottom:var(--s3)">Competencia</p><h2>Añadir un enlace</h2></div><span class="hint num">${w.length} de ${aj.max_vigilancias} enlaces</span></div>
-          <form id="addForm" class="inline" autocomplete="off" novalidate>
-            <div><label for="url">Enlace de una tienda o de un producto</label><input id="url" inputmode="url" placeholder="https://tienda-competidor.com/products/camiseta" required></div>
-            <button class="btn primary" id="detectBtn">Comprobar</button>
+          <div class="p-head"><div><p class="eyebrow" style="margin-bottom:var(--s3)">Competencia</p><h2>Añadir un enlace</h2></div><span class="hint num">${w.length} de ${aj.max_vigilancias} enlaces</span></div>
+          ${lleno ? `<p class="msg info" style="margin:0 0 var(--s4)">Has llegado al máximo de tu plan (${aj.max_vigilancias} enlaces). Quita uno o <a href="mailto:manelfernandezp1@gmail.com?subject=Ampliar%20mi%20plan">escríbeme para ampliarlo</a>.</p>` : ''}
+          <form id="addForm" class="p-inline" autocomplete="off" novalidate>
+            <div>${lbl('url', 'Enlace de una tienda o de un producto', ayuda('monitor', 'url'))}<input id="url" type="url" inputmode="url" placeholder="https://tienda-competidor.com/products/camiseta" spellcheck="false"${lleno ? ' disabled' : ''}></div>
+            <button class="btn primary" id="detectBtn"${lleno ? ' disabled' : ''}>Comprobar</button>
           </form>
-          <ul class="kinds">
+          <ul class="p-kinds">
             <li><b>Producto concreto</b> de cualquier tienda: vigilo su precio y su stock. Puedes poner tu precio para saber si te ganan.</li>
             <li><b>Tienda entera</b> Shopify o WooCommerce: pega la portada o una colección y vigilo todo su catálogo.</li>
           </ul>
-          <div id="addMsg"></div><div id="preview"></div>
+          <div id="addMsg" aria-live="polite"></div><div id="preview"></div>
         </div>
         <div class="p-card">
-          <div class="card-head"><h2>Lo que vigilas</h2><span class="hint">Se revisa solo</span></div>
-          <div class="tbl-wrap"><table class="tbl">
-            <thead><tr><th>Enlace</th><th class="hide-s">Estado</th><th class="r">Precio</th><th class="r">Tu precio</th><th><span class="sr-only">Quitar</span></th></tr></thead>
+          <div class="p-head"><h2>Lo que vigilas</h2><span class="hint">Se revisa solo · ${esc(cadaTxt(AUTO.monitor, {}))}</span></div>
+          <div class="p-tbl-wrap"><table class="p-tbl">
+            <thead><tr><th scope="col">Enlace</th><th scope="col" class="hide-s">Estado</th><th scope="col" class="r">Precio</th><th scope="col" class="r">Tu precio</th><th scope="col"><span class="sr-only">Quitar</span></th></tr></thead>
             <tbody id="watchRows">${filasMonitor()}</tbody>
           </table></div>
         </div>
@@ -355,40 +445,44 @@
         <div class="p-card sunk">
           <p class="eyebrow">Estado</p>
           <span class="badge ${st.cls}">${esc(st.txt)}</span>
-          <dl class="facts tight">
+          <dl class="p-meta">
             <div><dt>Productos</dt><dd class="num">${productos.toLocaleString('es-ES')} en seguimiento</dd></div>
             <div><dt>Cambios</dt><dd>${r?.cambios ?? '—'} en la última revisión</dd></div>
-            <div><dt>Última</dt><dd>${esc(r?.ultima ? ago(r.ultima) : 'todavía no')}</dd></div>
+            <div><dt>Última vez</dt><dd>${esc(ago(r?.ultima))}</dd></div>
           </dl>
-          <div class="actions" style="margin-top:var(--s4)"><button type="button" class="btn primary full" id="checkNow">Revisar ahora</button></div>
-          <div id="checkMsg"></div>
+          <div class="p-actions" style="margin-top:var(--s4)"><button type="button" class="btn primary full" id="checkNow"${w.length ? '' : ' disabled'}>Revisar ahora</button></div>
+          ${w.length ? '' : '<p class="p-note">Añade un enlace para poder revisarlo.</p>'}
+          <div id="checkMsg" aria-live="polite"></div>
         </div>
-        <form class="p-card" id="monForm">
+        <form class="p-card" id="monForm" novalidate>
           <p class="eyebrow">Ajustes del monitor</p>
-          <div class="field"><label for="freq">Revisar cada</label><select id="freq">${[1, 3, 6, 12, 24].map((h) => `<option value="${h}"${aj.frecuencia_horas === h ? ' selected' : ''}>${horasTxt(h)}</option>`).join('')}</select></div>
-          <div class="field"><label for="thr">Avisar a partir de un cambio del</label><select id="thr">${[[0, 'cualquier cambio'], [1, '1 %'], [3, '3 %'], [5, '5 %'], [10, '10 %']].concat([0, 1, 3, 5, 10].includes(aj.umbral_pct) ? [] : [[aj.umbral_pct, `${aj.umbral_pct} %`]]).map(([v, t]) => `<option value="${v}"${aj.umbral_pct === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
-          <label class="check"><input type="checkbox" id="optStock"${aj.avisar_stock ? ' checked' : ''}> <span>Cambios de stock</span></label>
-          <label class="check"><input type="checkbox" id="optNew"${aj.avisar_nuevos ? ' checked' : ''}> <span>Productos nuevos</span></label>
-          <label class="check"><input type="checkbox" id="optRemoved"${aj.avisar_retirados ? ' checked' : ''}> <span>Productos retirados</span></label>
-          <div class="actions"><button class="btn primary" id="saveMon">Guardar</button></div>
-          <div id="monMsg"></div>
+          <div class="field">${lbl('freq', 'Revisar cada', ayuda('monitor', 'freq'))}<select id="freq">${[1, 3, 6, 12, 24].map((h) => `<option value="${h}"${aj.frecuencia_horas === h ? ' selected' : ''}>${horasTxt(h)}</option>`).join('')}</select></div>
+          <div class="field">${lbl('thr', 'Avisar a partir de un cambio del', ayuda('monitor', 'thr'))}<select id="thr">${[[0, 'cualquier cambio'], [1, '1 %'], [3, '3 %'], [5, '5 %'], [10, '10 %']].concat([0, 1, 3, 5, 10].includes(aj.umbral_pct) ? [] : [[aj.umbral_pct, `${aj.umbral_pct} %`]]).map(([v, t]) => `<option value="${v}"${aj.umbral_pct === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+          <div class="p-check"><label><input type="checkbox" id="optStock"${aj.avisar_stock ? ' checked' : ''}> <span>Avisarme de cambios de stock</span></label></div>
+          <div class="p-check"><label><input type="checkbox" id="optNew"${aj.avisar_nuevos ? ' checked' : ''}> <span>Avisarme de productos nuevos</span></label></div>
+          <div class="p-check"><label><input type="checkbox" id="optRemoved"${aj.avisar_retirados ? ' checked' : ''}> <span>Avisarme de productos retirados</span></label></div>
+          <div class="p-actions"><button class="btn primary" id="saveMon">Guardar</button></div>
+          <div id="monMsg" aria-live="polite"></div>
         </form>
       </aside>
-    </div>`;
+    </div>${pie('monitor')}`;
     $('addForm').addEventListener('submit', async (ev) => {
       ev.preventDefault(); msg('addMsg', ''); $('preview').innerHTML = '';
-      if (!$('url').value.trim()) return msg('addMsg', 'Pega primero un enlace');
+      const u = $('url').value.trim();
+      if (!u) { $('url').setAttribute('aria-invalid', 'true'); return msg('addMsg', 'Pega primero un enlace'); }
+      $('url').removeAttribute('aria-invalid');
       await busy($('detectBtn'), 'Comprobando', async () => {
-        const d = await api('detectar', { url: $('url').value });
+        const d = await api('detectar', { url: u });
         if (!d.ok) return msg('addMsg', d.error);
         pending = d; renderPreview(d);
       });
     });
+    $('url').addEventListener('input', () => { if ($('url').value) dirty = true; });
     $('watchRows').addEventListener('click', async (ev) => {
-      const id = ev.target.closest('[data-del]')?.dataset.del; if (!id) return;
-      const x = S.vigilancias.find((v) => v.id === id);
+      const b = ev.target.closest('[data-del]'); if (!b) return;
+      const x = S.vigilancias.find((v) => v.id === b.dataset.del);
       if (!confirm(`¿Dejar de vigilar «${x.nombre}»?`)) return;
-      const d = await api('borrar_vigilancia', { id }); if (!d.ok) return toast(d.error);
+      const d = await api('borrar_vigilancia', { id: x.id }); if (!d.ok) return toast(d.error);
       toast('Enlace quitado'); load(true);
     });
     $('watchRows').addEventListener('submit', async (ev) => {
@@ -402,7 +496,7 @@
         const d = await api('ajustes', { email: S.cliente.email, telegram_chat_id: S.cliente.telegram_chat_id, frecuencia_horas: +$('freq').value, umbral_pct: +$('thr').value,
           avisar_stock: $('optStock').checked, avisar_nuevos: $('optNew').checked, avisar_retirados: $('optRemoved').checked });
         if (!d.ok) return msg('monMsg', d.error);
-        toast('Ajustes guardados'); load(true);
+        toast('Ajustes guardados'); await load(true); msg('monMsg', 'Guardado', 'ok');
       });
     });
     $('checkNow').addEventListener('click', async (ev) => {
@@ -421,78 +515,82 @@
       const gana = e && w.mi_precio && e.precio !== null && e.precio !== undefined && e.precio < w.mi_precio * (1 - (w.tolerancia_pct || 0) / 100);
       const badge = !e ? '<span class="badge info">Pendiente</span>'
         : e.error && e.fallos ? `<span class="badge bad" title="${esc(e.error)}">Error</span>`
-        : e.retirado ? '<span class="badge warn">No disponible</span>'
+        : e.retirado ? '<span class="badge run">No disponible</span>'
         : gana ? `<span class="badge bad">Te gana ${Math.abs(Math.round((e.precio - w.mi_precio) / w.mi_precio * 1000) / 10).toLocaleString('es-ES')} %</span>`
         : `<span class="badge ok">${e.productos > 1 ? e.productos.toLocaleString('es-ES') + ' productos' : 'OK'}</span>`;
       const tienda = /tienda$/.test(w.tipo);
       const precio = tienda ? '<span class="hint">catálogo</span>' : e ? `<span class="num"${gana ? ' style="color:var(--alert);font-weight:600"' : ''}>${money(e.precio, e.moneda || w.moneda)}</span>${e.stock === false ? '<div class="sub">sin stock</div>' : ''}` : '—';
       const mio = tienda ? '<span class="hint">—</span>'
-        : `<form class="price-edit" data-id="${esc(w.id)}"><input aria-label="Tu precio" inputmode="decimal" name="p" value="${w.mi_precio ?? ''}" placeholder="—"><button class="btn sm" type="submit">OK</button></form>`;
-      return `<tr><td><div class="name">${esc(w.nombre)}</div><div class="sub">${esc(TYPES[w.tipo] || w.tipo)} · <a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.url.replace(/^https?:\/\//, '').slice(0, 60))}</a></div>
-        <div class="sub">${e ? 'Revisado ' + ago(e.ultima) : 'Se revisa en la próxima pasada'}</div></td>
+        : `<form class="p-price" data-id="${esc(w.id)}"><input aria-label="Tu precio para ${esc(w.nombre)}" inputmode="decimal" name="p" value="${w.mi_precio ?? ''}" placeholder="—"><button class="btn sm" type="submit">OK</button></form>`;
+      let host = w.url; try { host = new URL(w.url).host + new URL(w.url).pathname; } catch (err) { /* se queda la url */ }
+      return `<tr><td><div class="name">${esc(w.nombre)}</div><div class="sub">${esc(TYPES[w.tipo] || w.tipo)} · <a href="${esc(/^https?:\/\//i.test(w.url) ? w.url : '#')}" target="_blank" rel="noopener noreferrer">${esc(host.slice(0, 60))}</a></div>
+        <div class="sub">${e ? 'Revisado ' + ago(e.ultima) : 'Se revisa en la próxima pasada'}</div>${e?.error && e.fallos ? `<div class="sub" style="color:var(--alert)">${esc(e.error)}</div>` : ''}</td>
         <td class="hide-s">${badge}</td><td class="r">${precio}</td><td class="r">${mio}</td>
-        <td class="r"><button class="btn ghost sm danger" data-del="${esc(w.id)}" aria-label="Dejar de vigilar ${esc(w.nombre)}">Quitar</button></td></tr>`;
-    }).join('') || '<tr><td colspan="5" class="empty">Todavía no vigilas nada. Pega arriba el enlace de un producto o de una tienda.</td></tr>';
+        <td class="r"><button type="button" class="btn ghost sm danger" data-del="${esc(w.id)}" aria-label="Dejar de vigilar ${esc(w.nombre)}">Quitar</button></td></tr>`;
+    }).join('') || '<tr><td colspan="5" class="p-empty">Todavía no vigilas nada. Pega arriba el enlace de un producto o de una tienda.</td></tr>';
   }
   function renderPreview(d) {
     const tienda = /tienda$/.test(d.tipo);
-    const items = (d.productos || []).map((x) => `<li>${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : '<span class="ph"></span>'}
+    const items = (d.productos || []).map((x) => `<li>${x.image && /^https?:\/\//i.test(x.image) ? `<img src="${esc(x.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : '<span class="ph"></span>'}
       <div><div class="name">${esc(x.name)}</div>${x.stock === false ? '<div class="hint">sin stock</div>' : ''}</div>
       <div class="p"><span class="num">${money(x.price, x.currency || d.moneda)}</span>${x.regular ? `<div class="hint"><s>${money(x.regular, x.currency || d.moneda)}</s></div>` : ''}</div></li>`).join('');
-    $('preview').innerHTML = `<div class="preview"><div class="preview-head"><span class="badge info">${esc(TYPES[d.tipo] || d.tipo)}</span>
+    $('preview').innerHTML = `<div class="p-preview"><div class="p-preview-head"><span class="badge info">${esc(TYPES[d.tipo] || d.tipo)}</span>
       <div><div class="name" style="font-weight:500;color:var(--ink)">${esc(d.nombre)}</div><div class="hint">${tienda ? `${esc(String(d.total))} productos encontrados` : 'Producto encontrado'}</div></div></div>
-      <div class="preview-body">${d.aviso ? `<p class="msg warn">${esc(d.aviso)}</p>` : ''}<ul class="plist">${items}</ul>
-      <form id="confirmForm" style="margin-top:var(--s4)">
-        <div class="fgrid">
-          <div class="field full"><label for="wName">Nombre para reconocerlo</label><input id="wName" value="${esc(d.nombre)}" maxlength="80"></div>
-          ${tienda ? '' : `<div class="field"><label for="wMine">Tu precio (opcional)</label><input id="wMine" inputmode="decimal" placeholder="24,90"></div>
-          <div class="field"><label for="wTol">Avisarme si es más barato</label><select id="wTol"><option value="0">…en cualquier cantidad</option><option value="2">…más de un 2 %</option><option value="5">…más de un 5 %</option></select></div>`}
+      <div class="p-preview-body">${d.aviso ? `<p class="msg warn">${esc(d.aviso)}</p>` : ''}<ul class="p-plist">${items}</ul>
+      <form id="confirmForm" style="margin-top:var(--s4)" novalidate>
+        <div class="p-fgrid">
+          <div class="field full">${lbl('wName', 'Nombre para reconocerlo', ayuda('monitor', 'nombre'))}<input id="wName" value="${esc(d.nombre)}" maxlength="80"></div>
+          ${tienda ? '' : `<div class="field">${lbl('wMine', 'Tu precio (opcional)', ayuda('monitor', 'mi_precio'))}<input id="wMine" inputmode="decimal" placeholder="24,90"></div>
+          <div class="field">${lbl('wTol', 'Avisarme si es más barato', ayuda('monitor', 'tol'))}<select id="wTol"><option value="0">…en cualquier cantidad</option><option value="2">…más de un 2 %</option><option value="5">…más de un 5 %</option></select></div>`}
         </div>
-        <div class="actions" style="margin-top:0"><button class="btn primary" id="saveWatch">Empezar a vigilar</button><button type="button" class="btn ghost" id="cancelWatch">Cancelar</button></div>
+        <div class="p-actions" style="margin-top:0"><button class="btn primary" id="saveWatch">Empezar a vigilar</button><button type="button" class="btn ghost" id="cancelWatch">Cancelar</button></div>
       </form></div></div>`;
     $('confirmForm').addEventListener('submit', async (ev) => {
       ev.preventDefault();
       await busy($('saveWatch'), 'Guardando', async () => {
         const r = await api('guardar_vigilancia', { url: pending.url, nombre: $('wName').value, mi_precio: $('wMine')?.value ?? '', tolerancia_pct: $('wTol')?.value ?? 0 });
         if (!r.ok) return msg('addMsg', r.error);
-        pending = null; toast(r.mensaje || 'Guardado'); load(true);
+        pending = null; dirty = false; toast(r.mensaje || 'Guardado'); load(true);
       });
     });
-    $('cancelWatch').addEventListener('click', () => { $('preview').innerHTML = ''; pending = null; });
+    $('cancelWatch').addEventListener('click', () => { $('preview').innerHTML = ''; pending = null; dirty = false; $('url').focus(); });
   }
 
   // ---------------------------------------------------------------- avisos
   function renderAvisos(p) {
     const bot = BOT && !BOT.startsWith('__') ? `https://t.me/${BOT}` : '';
-    p.innerHTML = `<div class="p-grid">
+    p.innerHTML = `${migas('avisos')}<div class="p-grid">
       <form class="p-card" id="setForm" novalidate>
         <p class="eyebrow">Avisos</p>
         <h2>Dónde te llegan los resultados</h2>
-        <p>Todas tus automatizaciones te escriben aquí. Un mensaje cuando hay algo que contar; nunca spam.</p>
-        <fieldset style="margin-top:var(--s5)"><div class="fgrid">
-          <div class="field full"><label for="email">Email</label><input id="email" type="email" value="${esc(S.cliente.email)}" placeholder="tu@tienda.com" autocomplete="email"></div>
-          <div class="field full"><label for="chat">Telegram · chat ID (opcional)</label><input id="chat" inputmode="numeric" value="${esc(S.cliente.telegram_chat_id)}" placeholder="123456789">
-            <ol class="kinds" style="list-style:decimal;padding-left:18px"><li>Abre ${bot ? `<a href="${esc(bot)}" target="_blank" rel="noopener">el bot de avisos</a>` : 'el bot de avisos de Denoro'} y pulsa <b>Iniciar</b>.</li><li>Escribe a <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a> y copia tu <b>Id</b>.</li></ol></div>
+        <p>Todas tus automatizaciones te escriben aquí: un mensaje cuando hay algo que contar, nunca spam. Hace falta al menos uno de los dos.</p>
+        <fieldset style="margin-top:var(--s5)"><div class="p-fgrid">
+          <div class="field full">${lbl('email', 'Email', ayuda('avisos', 'email'))}<input id="email" type="email" value="${esc(S.cliente.email)}" placeholder="tu@tienda.com" autocomplete="email" spellcheck="false"></div>
+          <div class="field full">${lbl('chat', 'Telegram · chat ID (opcional)', ayuda('avisos', 'chat'))}<input id="chat" inputmode="numeric" value="${esc(S.cliente.telegram_chat_id)}" placeholder="123456789" autocomplete="off">
+            <ol class="p-kinds"><li>Abre ${bot ? `<a href="${esc(bot)}" target="_blank" rel="noopener">el bot de avisos de Denoro</a>` : 'el bot de avisos de Denoro'} y pulsa <b>Iniciar</b>.</li><li>Escribe a <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a> y copia el número que te da como <b>Id</b>.</li></ol></div>
         </div></fieldset>
-        <div class="actions"><button class="btn primary" id="saveSet">Guardar</button><button type="button" class="btn" id="testBtn">Enviarme una prueba</button></div>
-        <div id="setMsg"></div>
+        <div class="p-actions"><button class="btn primary" id="saveSet">Guardar</button><button type="button" class="btn" id="testBtn">Enviarme una prueba</button></div>
+        <div id="setMsg" aria-live="polite"></div>
       </form>
       <aside class="p-side"><div class="p-card sunk">
         <p class="eyebrow">Tus automatizaciones</p>
-        <ul class="chips sm" style="margin-top:var(--s2)">${S.servicios.map((s) => `<li>${esc(AUTO[s.id].nombre)}</li>`).join('')}</ul>
-        <p class="note">¿Quieres añadir otra o cambiar de plan? <a href="https://denoroautomations.com/automatizaciones.html" target="_blank" rel="noopener">Mira el catálogo</a> y escríbeme.</p>
+        <ul class="p-chips" style="margin-top:var(--s2)">${S.servicios.map((s) => `<li>${esc(AUTO[s.id].nombre)}</li>`).join('')}</ul>
+        <p class="p-note">¿Quieres añadir otra o cambiar de plan? <a href="https://denoroautomations.com/automatizaciones.html" target="_blank" rel="noopener">Mira el catálogo</a> y escríbeme.</p>
       </div></aside>
-    </div>`;
-    $('setForm').addEventListener('submit', async (ev) => {
+    </div>${pie('avisos')}`;
+    const f = $('setForm');
+    f.addEventListener('input', () => { dirty = true; });
+    f.addEventListener('submit', async (ev) => {
       ev.preventDefault(); msg('setMsg', '');
       await busy($('saveSet'), 'Guardando', async () => {
-        const r = await api('ajustes', { email: $('email').value, telegram_chat_id: $('chat').value });
-        if (!r.ok) return msg('setMsg', r.error);
-        toast('Avisos guardados'); await load(true); msg('setMsg', 'Guardado', 'ok');
+        const r = await api('ajustes', { email: $('email').value.trim(), telegram_chat_id: $('chat').value.trim() });
+        if (!r.ok) { msg('setMsg', r.error); (/email/i.test(r.error) ? $('email') : $('chat')).setAttribute('aria-invalid', 'true'); return; }
+        dirty = false; toast('Avisos guardados'); await load(true); msg('setMsg', 'Guardado', 'ok');
       });
     });
     $('testBtn').addEventListener('click', async (ev) => {
       msg('setMsg', '');
+      if (dirty) return msg('setMsg', 'Guarda primero los cambios para que la prueba vaya a la dirección nueva.', 'warn');
       await busy(ev.currentTarget, 'Enviando', async () => {
         const r = await api('probar_aviso');
         msg('setMsg', r.ok ? r.mensaje : r.error, r.ok ? 'ok' : 'err');
@@ -503,24 +601,29 @@
   // ---------------------------------------------------------------- carga
   async function load(keep) {
     const r = await api('estado');
-    if (!r.ok) { $('app').innerHTML = `<div class="center"><div><p class="eyebrow" style="justify-content:center">Denoro Automations</p><h1>No se puede abrir tu panel</h1><p class="lead">${esc(r.error)}</p></div></div>`; return; }
+    if (!r.ok) { if (!keep || !S) $('app').innerHTML = `<div class="p-center"><div><p class="eyebrow">Denoro Automations</p><h1>No se puede abrir tu panel</h1><p class="lead">${esc(r.error)}</p></div></div>`; else toast(r.error); return; }
     const first = !S; S = r;
-    if (first || !keep) { shell(); go(location.hash.slice(1) || 'resumen'); return; }
-    const y = window.scrollY; shell(); go(tab); window.scrollTo(0, y);
+    if (first || !keep) { shell(); go(location.hash.slice(1) || 'resumen', { forzar: true }); return; }
+    const y = window.scrollY; shell(); go(tab, { forzar: true }); window.scrollTo(0, y);
   }
   document.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-tab]'); if (t) { go(t.dataset.tab, true); return; }
-    const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go, true); }
+    const t = e.target.closest('[data-tab]'); if (t) { go(t.dataset.tab, { scroll: true }); return; }
+    const g = e.target.closest('[data-go]'); if (g) { e.preventDefault(); go(g.dataset.go, { scroll: true, focus: true }); }
   });
   document.addEventListener('keydown', (e) => {
-    if (!e.target.matches?.('.tab') || !['ArrowRight', 'ArrowLeft'].includes(e.key)) return;
-    const tabs = [...document.querySelectorAll('.tab')]; const i = tabs.indexOf(e.target);
-    const n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; n.focus(); go(n.dataset.tab);
-    document.getElementById(`tab-${n.dataset.tab}`)?.focus();
+    if (!e.target.matches?.('.p-tab')) return;
+    const tabs = [...document.querySelectorAll('.p-tab')]; const i = tabs.indexOf(e.target);
+    const k = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+    if (k === undefined) return;
+    e.preventDefault();
+    const n = tabs[(k + tabs.length) % tabs.length]; go(n.dataset.tab); $(`tab-${tab}`)?.focus();
   });
   window.addEventListener('hashchange', () => { if (S && location.hash.slice(1) !== tab) go(location.hash.slice(1)); });
+  window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+  // El estado «ejecutándose» se refresca solo mientras dure
+  setInterval(() => { if (S && !dirty && document.visibilityState === 'visible' && S.servicios.some((s) => enCurso(s.estado))) load(true); }, 15000);
 
-  if (!token) $('app').innerHTML = '<div class="center"><div><p class="eyebrow" style="justify-content:center">Denoro Automations</p><h1>Falta tu enlace de acceso</h1><p class="lead">Abre el enlace personal que te envié desde Denoro.</p></div></div>';
+  if (!token) $('app').innerHTML = '<div class="p-center"><div><p class="eyebrow">Denoro Automations</p><h1>Falta tu enlace de acceso</h1><p class="lead">Abre el enlace personal que te envié desde Denoro.</p></div></div>';
   else load();
 })();
 </script>

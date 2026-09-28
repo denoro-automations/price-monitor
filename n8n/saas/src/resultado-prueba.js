@@ -14,5 +14,5 @@ if (req.enviar_email) {
 }
 const ok = !fallos.length && partes.length > 0;
 return [{ json: { status: ok ? 200 : 502, respuesta: ok
-  ? { ok: true, mensaje: `Prueba enviada por ${partes.join(' y ')}. Revisa que te haya llegado.` }
+  ? { ok: true, mensaje: req.mensaje_ok || `Prueba enviada por ${partes.join(' y ')}. Revisa que te haya llegado.` }
   : { ok: false, error: fallos.join(' ') || 'No hay ningún canal configurado' } } }];

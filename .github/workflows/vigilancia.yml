@@ -1,0 +1,34 @@
+# Comprueba cada 30 minutos que el panel de los clientes responde en app.denoroautomations.com.
+# Si no responde dos veces seguidas (con 2 minutos de margen), la ejecución falla y GitHub te manda un email.
+# Nota: GitHub pausa las tareas programadas de un repo que lleva 60 días sin cambios; si pasa, reactívala en Actions.
+name: Vigilancia del panel
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  panel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: ¿Responde el panel?
+        run: |
+          comprobar() {
+            codigo=$(curl -s -o respuesta.html -w '%{http_code}' --max-time 20 https://app.denoroautomations.com/webhook/denoro/panel)
+            [ "$codigo" = "200" ] && grep -q 'Denoro' respuesta.html
+          }
+          if comprobar; then echo "Panel OK"; exit 0; fi
+          echo "Primer intento fallido; reintento en 2 minutos"
+          sleep 120
+          if comprobar; then echo "Panel OK al segundo intento"; exit 0; fi
+          echo "::error::El panel no responde. Mira si el ordenador o el servidor está encendido, Docker en marcha y el contenedor del túnel activo."
+          exit 1
+      - name: ¿Responde la API?
+        run: |
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST -H 'Content-Type: application/json' \
+            -d '{"accion":"estado","token":"comprobacion-de-vigilancia"}' https://app.denoroautomations.com/webhook/denoro/api)
+          # 401 = n8n ha leído la tabla de clientes y ha rechazado el token de prueba: todo en marcha
+          if [ "$codigo" != "401" ]; then echo "::error::La API responde $codigo en vez de 401"; exit 1; fi
+          echo "API OK"

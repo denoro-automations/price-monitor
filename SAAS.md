@@ -81,3 +81,11 @@ Marcadores nuevos al instalar: `__WF_FICHAS__`, `__WF_STOCK__`, `__WF_CARRITOS__
 **Límite actual:** en las versiones del panel, los nodos de Shopify, WooCommerce y OpenAI se sustituyen por un aviso claro, porque una credencial de n8n vale para una sola tienda. Funcionan los datos de ejemplo, CSV, feeds XML/CSV y enlaces públicos. Conectar la tienda de cada cliente (credencial por cliente) es el siguiente paso.
 
 Tests: `node n8n/saas/test/test_panel_unico.js` (catálogo, API, planificador y las seis automatizaciones de punta a punta con un mini-ejecutor de n8n). Vista local sin n8n: `node n8n/saas/test/servidor-local.js`.
+
+### Revisión del 28-sep (noche)
+- **Arreglado:** la web estrenó su propio componente `.tabs` (oculto sin la clase `js`) y la barra de pestañas del panel desapareció. Ahora todo lo propio del panel lleva el prefijo `p-` y la página marca `<html class="js">`; usa la cabecera `.site-header` de la web.
+- **Navegación:** botón «Volver al resumen» arriba y abajo de cada pestaña, «Siguiente: …», aviso si sales con cambios sin guardar, título de la pestaña del navegador según la sección.
+- **Ayudas «i»:** cada campo tiene su explicación y un ejemplo (`AYUDAS` en `src/automatizaciones.js`). Se abren al pasar el ratón, con el teclado (Tab) o tocando en el móvil; Esc las cierra; nunca se salen de la pantalla.
+- **En curso:** antes de lanzar una automatización se marca `en_curso` en `denoro_estado`; ni el botón ni el planificador lanzan otra encima durante 15 min (evita facturar dos veces).
+- Campos vacíos ya no pisan los valores por defecto; facturas de prueba a nombre de la tienda del cliente; carritos reales exigen la web de la tienda; el error señala el campo que falla.
+- Accesibilidad revisada: etiquetas en todos los campos, contraste AA en las tarjetas grises, zonas táctiles de 44 px, sin desborde horizontal en móvil.

@@ -1,34 +1,35 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" class="js">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#fcfcfa">
 <title>Administración · Denoro Automations</title>
 <link rel="icon" href="https://denoroautomations.com/assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <style>/*CSS*/</style>
 </head>
 <body class="app">
 <a class="skip" href="#main">Ir al contenido</a>
-<header>
+<header class="site-header">
   <div class="wrap">
-    <a class="brand" href="https://denoroautomations.com/" target="_blank" rel="noopener"><i aria-hidden="true">D</i>Denoro <span>Administración</span></a>
-    <div class="who"><button id="logout" type="button" class="btn ghost sm" hidden>Salir</button></div>
+    <a class="brand" href="https://denoroautomations.com/" target="_blank" rel="noopener" aria-label="Denoro Automations (abre la web en otra pestaña)"><i aria-hidden="true">D</i>Denoro <span>Administración</span></a>
+    <div class="p-who"><button id="logout" type="button" class="btn ghost sm" hidden>Salir</button></div>
   </div>
 </header>
 
 <main id="main"><div class="wrap">
-  <div id="login" class="center">
-    <form id="loginForm" class="p-card login" novalidate>
+  <div id="login" class="p-center">
+    <form id="loginForm" class="p-card p-login" novalidate>
       <p class="eyebrow">Denoro Automations</p>
       <h2>Entrar</h2>
-      <p>Introduce tu clave de administrador.</p>
+      <p class="hint" style="margin-top:var(--s2)">Introduce tu clave de administrador.</p>
       <div class="field" style="margin-top:var(--s5)"><label for="key">Clave</label><input id="key" type="password" autocomplete="current-password" required></div>
       <button class="btn primary full" id="loginBtn">Entrar</button>
-      <div id="loginMsg"></div>
+      <div id="loginMsg" aria-live="polite"></div>
     </form>
   </div>
 
@@ -37,49 +38,49 @@
       <p class="eyebrow">Administración</p>
       <h1>Clientes</h1>
       <p class="lead">Da de alta a cada cliente, elige qué automatizaciones tiene y mándale su enlace privado. Desde ahí lo ajusta todo él.</p>
-      <dl class="facts">
-        <div><dt>Clientes activos</dt><dd><span class="big num" id="sClients">0</span></dd></div>
-        <div><dt>Automatizaciones en marcha</dt><dd><span class="big num" id="sAutos">0</span></dd></div>
-        <div><dt>Con error</dt><dd><span class="big num" id="sErrors">0</span></dd></div>
+      <dl class="p-facts">
+        <div><dt>Clientes activos</dt><dd><span class="p-big num" id="sClients">0</span></dd></div>
+        <div><dt>Automatizaciones en marcha</dt><dd><span class="p-big num" id="sAutos">0</span></dd></div>
+        <div><dt>Con error</dt><dd><span class="p-big num" id="sErrors">0</span></dd></div>
       </dl>
     </div>
     <div style="padding-bottom:var(--s8)">
-      <form class="p-card" id="newForm" novalidate hidden>
-        <div class="card-head"><div><p class="eyebrow" style="margin-bottom:var(--s3)">Alta</p><h2>Nuevo cliente</h2></div><button type="button" class="btn ghost sm" id="newClose">Cerrar</button></div>
-        <div class="p-grid" style="gap:var(--s6)">
+      <form class="p-card" id="newForm" novalidate hidden style="margin-bottom:var(--s5)">
+        <div class="p-head"><div><p class="eyebrow" style="margin-bottom:var(--s3)">Alta</p><h2>Nuevo cliente</h2></div><button type="button" class="btn ghost sm" id="newClose">Cerrar</button></div>
+        <div class="p-grid">
           <div>
-            <fieldset><div class="fgrid">
-              <div class="field full"><label for="nNombre">Nombre de la tienda</label><input id="nNombre" required maxlength="80"></div>
-              <div class="field"><label for="nEmail">Email para avisos</label><input id="nEmail" type="email"></div>
-              <div class="field"><label for="nChat">Telegram · chat ID (opcional)</label><input id="nChat" inputmode="numeric"></div>
+            <fieldset><div class="p-fgrid">
+              <div class="field full"><div class="p-label"><label for="nNombre">Nombre de la tienda</label></div><input id="nNombre" required maxlength="80" autocomplete="off"></div>
+              <div class="field"><div class="p-label"><label for="nEmail">Email para avisos</label></div><input id="nEmail" type="email" autocomplete="off" spellcheck="false"></div>
+              <div class="field"><div class="p-label"><label for="nChat">Telegram · chat ID (opcional)</label></div><input id="nChat" inputmode="numeric" autocomplete="off"></div>
             </div></fieldset>
-            <fieldset><legend>Automatizaciones</legend><div class="fgrid" id="nAutos"></div></fieldset>
+            <fieldset><legend>Automatizaciones</legend><div class="p-fgrid" id="nAutos"></div></fieldset>
           </div>
           <div>
             <fieldset id="nMonitor"><legend>Monitor de precios</legend>
-              <div class="fgrid">
-                <div class="field"><label for="nMax">Plan</label><select id="nMax"><option value="3">Básico · 3 enlaces</option><option value="10" selected>Estándar · 10</option><option value="30">Premium · 30</option></select></div>
-                <div class="field"><label for="nFreq">Revisar cada</label><select id="nFreq"><option value="3">3 h</option><option value="6" selected>6 h</option><option value="12">12 h</option><option value="24">24 h</option></select></div>
+              <div class="p-fgrid">
+                <div class="field"><div class="p-label"><label for="nMax">Plan</label></div><select id="nMax"><option value="3">Básico · 3 enlaces</option><option value="10" selected>Estándar · 10</option><option value="30">Premium · 30</option></select></div>
+                <div class="field"><div class="p-label"><label for="nFreq">Revisar cada</label></div><select id="nFreq"><option value="1">1 h</option><option value="3">3 h</option><option value="6" selected>6 h</option><option value="12">12 h</option><option value="24">24 h</option></select></div>
               </div>
             </fieldset>
             <fieldset><legend>Cuentas conectadas</legend><div id="nCon"></div>
-              <p class="hint">Márcalas cuando su conexión esté hecha. Sin ellas, el cliente usa datos de ejemplo, CSV, feeds o enlaces públicos.</p></fieldset>
-            <div class="actions"><button class="btn primary full" id="newBtn">Crear y copiar su enlace</button></div>
-            <div id="newMsg"></div>
+              <p class="hint">Márcalas solo cuando su conexión esté hecha. Sin ellas, el cliente usa datos de ejemplo, CSV, feeds o enlaces públicos.</p></fieldset>
+            <div class="p-actions"><button class="btn primary full" id="newBtn">Crear y copiar su enlace</button></div>
+            <div id="newMsg" aria-live="polite"></div>
           </div>
         </div>
       </form>
       <div class="p-card">
-        <div class="card-head"><h2>Todos los clientes</h2><div class="inline" style="align-items:center"><span class="hint" id="count"></span><button type="button" class="btn primary sm" id="newOpen">Nuevo cliente</button></div></div>
-        <div class="tbl-wrap"><table class="tbl">
-          <thead><tr><th>Cliente</th><th class="hide-s">Automatizaciones</th><th>Estado</th><th class="r"><span class="sr-only">Acciones</span></th></tr></thead>
+        <div class="p-head"><h2>Todos los clientes</h2><div class="p-actions" style="margin:0"><span class="hint" id="count"></span><button type="button" class="btn primary sm" id="newOpen">+ Nuevo cliente</button></div></div>
+        <div class="p-tbl-wrap"><table class="p-tbl">
+          <thead><tr><th scope="col">Cliente</th><th scope="col" class="hide-s">Automatizaciones</th><th scope="col">Estado</th><th scope="col" class="r"><span class="sr-only">Acciones</span></th></tr></thead>
           <tbody id="rows"></tbody>
         </table></div>
       </div>
     </div>
   </div>
 </div></main>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="p-toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 /*AUTOS*/
@@ -92,9 +93,9 @@
   let panelUrl = '';
   let clientes = [];
   let abierto = '';
-  const panelLink = (t) => `${panelUrl && !panelUrl.startsWith('__') ? panelUrl : location.origin + location.pathname.replace(/\/admin\/?$/, '/panel')}?t=${t}`;
+  const panelLink = (t) => `${panelUrl && !panelUrl.startsWith('__') ? panelUrl : location.origin + location.pathname.replace(/\/admin\/?$/, '/panel')}?t=${encodeURIComponent(t)}`;
   function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3400); }
-  const msg = (id, html, kind = 'err') => { $(id).innerHTML = html ? `<p class="msg ${kind}">${html}</p>` : ''; };
+  const msg = (id, html, kind = 'err') => { $(id).innerHTML = html ? `<p class="msg ${kind}" role="${kind === 'err' ? 'alert' : 'status'}">${html}</p>` : ''; };
   async function api(accion, data = {}) {
     try { const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_key: key, accion, ...data }) }); return await r.json(); }
     catch (e) { return { ok: false, error: 'Sin conexión con n8n' }; }
@@ -106,95 +107,120 @@
     if (m < 60) return `hace ${Math.max(m, 1)} min`; const h = Math.round(m / 60); if (h < 24) return `hace ${h} h`;
     return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
   };
-  const checks = (name, items, sel) => items.map(([v, t, sub]) => `<label class="check"><input type="checkbox" name="${name}" value="${esc(v)}"${sel.includes(v) ? ' checked' : ''}> <span>${esc(t)}${sub ? `<small>${esc(sub)}</small>` : ''}</span></label>`).join('');
+  let uid = 0;
+  const checks = (name, items, sel) => items.map(([v, t, sub]) => { const id = `${name}-${v}-${++uid}`; return `<div class="p-check"><label for="${id}"><input type="checkbox" id="${id}" name="${name}" value="${esc(v)}"${sel.includes(v) ? ' checked' : ''}> <span>${esc(t)}${sub ? `<small>${esc(sub)}</small>` : ''}</span></label></div>`; }).join('');
   const AUTOS_OPC = AUTOS.map((a) => [a.id, a.nombre, a.cat]);
   const CON_OPC = Object.entries(CONEXIONES).map(([k, v]) => [k, v]);
   const valores = (root, name) => [...root.querySelectorAll(`input[name="${name}"]:checked`)].map((i) => i.value);
+  const errores = (c) => c.servicios.filter((s) => s.error).length + (c.errores > 0 ? 1 : 0);
 
   function fila(c) {
     const chips = c.servicios.map((s) => {
       const cls = s.error ? 'bad' : s.ultima ? 'ok' : '';
-      const t = s.error ? `Error: ${s.error}` : s.ultima ? `Última: ${ago(s.ultima)}` : 'Sin ejecutar';
-      return `<li class="${cls}" title="${esc(t)}">${esc(AUTO[s.id]?.corto || s.id)}</li>`;
+      const t = s.error ? `Error: ${s.error}` : s.ultima ? `Última vez: ${ago(s.ultima)}` : 'Sin ejecutar';
+      return `<li class="${cls}" title="${esc(t)}">${esc(AUTO[s.id]?.corto || s.id)}<span class="sr-only"> (${esc(t)})</span></li>`;
     }).join('');
-    const errores = c.servicios.filter((s) => s.error).length + (c.errores > 0 ? 1 : 0);
-    return `<tr class="${abierto === c.token ? 'open' : ''}">
+    const n = errores(c); const open = abierto === c.token;
+    return `<tr class="${open ? 'open' : ''}">
       <td><div class="name">${esc(c.nombre)}</div><div class="sub">${esc(c.email || 'sin email')}${c.telegram_chat_id ? ' · Telegram' : ''}</div>
-        ${c.conexiones?.length ? `<div class="sub">Conectado: ${esc(c.conexiones.map((x) => CONEXIONES[x]).join(', '))}</div>` : ''}</td>
-      <td class="hide-s"><ul class="chips sm">${chips || '<li class="off">ninguna</li>'}</ul></td>
-      <td>${!c.activo ? '<span class="badge">Pausado</span>' : errores ? `<span class="badge bad">${errores} con error</span>` : '<span class="badge ok">Activo</span>'}</td>
-      <td class="r" style="white-space:nowrap">
-        <button class="btn sm" data-copy="${esc(c.token)}">Copiar enlace</button>
-        <a class="btn sm ghost" href="${esc(panelLink(c.token))}" target="_blank" rel="noopener">Abrir</a>
-        <button class="btn sm ghost" data-edit="${esc(c.token)}" aria-expanded="${abierto === c.token}">${abierto === c.token ? 'Cerrar' : 'Editar'}</button></td></tr>
-      ${abierto === c.token ? editor(c) : ''}`;
+        ${c.conexiones?.length ? `<div class="sub">Conectado: ${esc(c.conexiones.map((x) => CONEXIONES[x]).join(', '))}</div>` : ''}
+        ${!c.email && !c.telegram_chat_id ? '<div class="sub" style="color:var(--alert)">Sin dónde avisar: sus automatizaciones no se ejecutan</div>' : ''}</td>
+      <td class="hide-s"><ul class="p-chips">${chips || '<li>ninguna</li>'}</ul></td>
+      <td>${!c.activo ? '<span class="badge">Pausado</span>' : n ? `<span class="badge bad">${n} con error</span>` : '<span class="badge ok">Activo</span>'}</td>
+      <td class="r"><div class="p-row-actions">
+        <button type="button" class="btn sm" data-copy="${esc(c.token)}">Copiar enlace</button>
+        <a class="btn sm ghost" href="${esc(panelLink(c.token))}" target="_blank" rel="noopener">Abrir panel</a>
+        <button type="button" class="btn sm ghost" data-edit="${esc(c.token)}" aria-expanded="${open}">${open ? 'Cerrar' : 'Editar'}</button></div></td></tr>
+      ${open ? editor(c) : ''}`;
   }
   function editor(c) {
     const ids = c.servicios.map((s) => s.id);
+    const planes = [3, 10, 30, 50, 100];
     return `<tr class="edit"><td colspan="4"><form class="p-card" data-form="${esc(c.token)}" novalidate style="margin-top:var(--s2)">
-      <div class="fgrid">
-        <div class="field"><label>Nombre</label><input name="nombre" value="${esc(c.nombre)}" maxlength="80"></div>
-        <div class="field"><label>Email para avisos</label><input name="email" type="email" value="${esc(c.email || '')}"></div>
+      <div class="p-fgrid">
+        <div class="field"><div class="p-label"><label for="e-nombre">Nombre</label></div><input id="e-nombre" name="nombre" value="${esc(c.nombre)}" maxlength="80"></div>
+        <div class="field"><div class="p-label"><label for="e-email">Email para avisos</label></div><input id="e-email" name="email" type="email" value="${esc(c.email || '')}" spellcheck="false"></div>
       </div>
-      <fieldset><legend>Automatizaciones</legend><div class="fgrid">${checks('auto', AUTOS_OPC, ids)}</div></fieldset>
-      <fieldset><legend>Monitor · enlaces máx.</legend><div class="fgrid"><div class="field"><select name="max">${[3, 10, 30, 50, 100].map((n) => `<option value="${n}"${c.max_vigilancias === n ? ' selected' : ''}>${n} enlaces</option>`).join('')}${[3, 10, 30, 50, 100].includes(c.max_vigilancias) ? '' : `<option value="${c.max_vigilancias}" selected>${c.max_vigilancias} enlaces</option>`}</select></div></div></fieldset>
-      <fieldset><legend>Cuentas conectadas</legend><div class="fgrid">${checks('con', CON_OPC, c.conexiones || [])}</div></fieldset>
-      <div class="actions"><button class="btn primary">Guardar</button><button type="button" class="btn ${c.activo ? 'danger' : ''}" data-toggle="${esc(c.token)}" data-active="${c.activo}">${c.activo ? 'Pausar cliente' : 'Reactivar cliente'}</button></div>
-      <div data-msg></div></form></td></tr>`;
+      <fieldset><legend>Automatizaciones</legend><div class="p-fgrid">${checks('auto', AUTOS_OPC, ids)}</div></fieldset>
+      <fieldset><legend>Monitor de precios</legend><div class="p-fgrid"><div class="field"><div class="p-label"><label for="e-max">Enlaces máximos</label></div><select id="e-max" name="max">${planes.map((n) => `<option value="${n}"${c.max_vigilancias === n ? ' selected' : ''}>${n} enlaces</option>`).join('')}${planes.includes(c.max_vigilancias) ? '' : `<option value="${c.max_vigilancias}" selected>${c.max_vigilancias} enlaces</option>`}</select></div></div></fieldset>
+      <fieldset><legend>Cuentas conectadas</legend><div class="p-fgrid">${checks('con', CON_OPC, c.conexiones || [])}</div></fieldset>
+      <div class="p-actions"><button class="btn primary">Guardar</button>${c.email && c.activo ? `<button type="button" class="btn ghost" data-welcome="${esc(c.token)}">Enviar email de bienvenida</button>` : ''}<button type="button" class="btn ${c.activo ? 'danger' : ''}" data-toggle="${esc(c.token)}" data-active="${c.activo}">${c.activo ? 'Pausar cliente' : 'Reactivar cliente'}</button></div>
+      <div data-msg aria-live="polite"></div></form></td></tr>`;
   }
 
   async function load() {
     const r = await api('admin_listar');
-    if (!r.ok) { $('login').hidden = false; $('dash').hidden = true; $('logout').hidden = true; if (key) msg('loginMsg', esc(r.error)); return; }
+    if (!r.ok) {
+      $('login').hidden = false; $('dash').hidden = true; $('logout').hidden = true;
+      if (key) { msg('loginMsg', esc(r.error)); try { sessionStorage.removeItem('denoro_admin'); } catch (e) {} key = ''; }
+      return;
+    }
     try { sessionStorage.setItem('denoro_admin', key); } catch (e) {}
-    panelUrl = r.panel_url; clientes = r.clientes;
+    panelUrl = r.panel_url; clientes = r.clientes.sort((a, b) => Number(b.activo) - Number(a.activo) || a.nombre.localeCompare(b.nombre, 'es'));
     $('login').hidden = true; $('dash').hidden = false; $('logout').hidden = false;
     $('sClients').textContent = clientes.filter((c) => c.activo).length;
     $('sAutos').textContent = clientes.filter((c) => c.activo).reduce((n, c) => n + c.servicios.length, 0);
-    $('sErrors').textContent = clientes.reduce((n, c) => n + c.servicios.filter((s) => s.error).length + (c.errores > 0 ? 1 : 0), 0);
+    $('sErrors').textContent = clientes.reduce((n, c) => n + errores(c), 0);
     $('count').textContent = `${clientes.length} en total`;
-    $('rows').innerHTML = clientes.map(fila).join('') || '<tr><td colspan="4" class="empty">Aún no hay clientes. Pulsa «Nuevo cliente» para crear el primero.</td></tr>';
+    pintar();
     if (!clientes.length) $('newForm').hidden = false;
   }
-  $('nAutos').innerHTML = checks('nauto', AUTOS_OPC, ['monitor']);
-  $('nCon').innerHTML = checks('ncon', CON_OPC, []);
+  const pintar = () => { $('rows').innerHTML = clientes.map(fila).join('') || '<tr><td colspan="4" class="p-empty">Aún no hay clientes. Pulsa «Nuevo cliente» para crear el primero.</td></tr>'; };
+  const resetNuevo = () => { $('nAutos').innerHTML = checks('nauto', AUTOS_OPC, ['monitor']); $('nCon').innerHTML = checks('ncon', CON_OPC, []); syncMon(); };
   const syncMon = () => { $('nMonitor').hidden = !valores($('newForm'), 'nauto').includes('monitor'); };
-  $('nAutos').addEventListener('change', syncMon);
+  $('newForm').addEventListener('change', syncMon);
+  resetNuevo();
 
   $('newOpen').addEventListener('click', () => { $('newForm').hidden = false; $('nNombre').focus(); });
-  $('newClose').addEventListener('click', () => { $('newForm').hidden = true; });
-  $('loginForm').addEventListener('submit', (e) => { e.preventDefault(); key = $('key').value; load(); });
+  $('newClose').addEventListener('click', () => { $('newForm').hidden = true; msg('newMsg', ''); });
+  $('loginForm').addEventListener('submit', (e) => { e.preventDefault(); key = $('key').value; if (!key) return msg('loginMsg', 'Escribe la clave'); load(); });
   $('logout').addEventListener('click', () => { key = ''; try { sessionStorage.removeItem('denoro_admin'); } catch (e) {} $('key').value = ''; msg('loginMsg', ''); load(); });
+  async function bienvenida(b) {
+    const c = clientes.find((x) => x.token === b.dataset.welcome);
+    if (!c || !confirm(`¿Enviar a ${c.email} el email de bienvenida con el enlace de su panel?`)) return;
+    b.disabled = true; const r = await api('admin_bienvenida', { token: c.token }); b.disabled = false;
+    toast(r.ok ? r.mensaje : r.error);
+  }
+  $('newMsg').addEventListener('click', (e) => { const b = e.target.closest('button[data-welcome]'); if (b) bienvenida(b); });
   $('rows').addEventListener('click', async (e) => {
     const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.welcome) return bienvenida(b);
     if (b.dataset.copy) return copy(panelLink(b.dataset.copy));
-    if (b.dataset.edit) { abierto = abierto === b.dataset.edit ? '' : b.dataset.edit; $('rows').innerHTML = clientes.map(fila).join(''); return; }
+    if (b.dataset.edit) { abierto = abierto === b.dataset.edit ? '' : b.dataset.edit; pintar(); if (abierto) document.getElementById('e-nombre')?.focus(); return; }
     if (b.dataset.toggle) {
-      const r = await api('admin_actualizar', { token: b.dataset.toggle, activo: b.dataset.active !== 'true' });
-      toast(r.ok ? (b.dataset.active === 'true' ? 'Cliente pausado' : 'Cliente reactivado') : r.error); load();
+      const pausar = b.dataset.active === 'true';
+      if (pausar && !confirm('¿Pausar a este cliente? Sus automatizaciones dejan de ejecutarse y su panel no abre hasta que lo reactives.')) return;
+      const r = await api('admin_actualizar', { token: b.dataset.toggle, activo: !pausar });
+      toast(r.ok ? (pausar ? 'Cliente pausado' : 'Cliente reactivado') : r.error); load();
     }
   });
   $('rows').addEventListener('submit', async (e) => {
     e.preventDefault(); const f = e.target.closest('form[data-form]'); if (!f) return;
     const box = f.querySelector('[data-msg]');
-    const r = await api('admin_actualizar', { token: f.dataset.form, nombre: f.nombre.value, email: f.email.value,
+    const r = await api('admin_actualizar', { token: f.dataset.form, nombre: f.nombre.value, email: f.email.value.trim(),
       servicios: valores(f, 'auto'), conexiones: valores(f, 'con'), max_vigilancias: +f.max.value });
-    if (!r.ok) { box.innerHTML = `<p class="msg err">${esc(r.error)}</p>`; return; }
+    if (!r.ok) { box.innerHTML = `<p class="msg err" role="alert">${esc(r.error)}</p>`; return; }
     toast('Cliente actualizado'); abierto = ''; load();
   });
   $('newForm').addEventListener('submit', async (e) => {
     e.preventDefault(); msg('newMsg', '');
     const servicios = valores($('newForm'), 'nauto');
-    if (!$('nNombre').value.trim()) return msg('newMsg', 'Pon el nombre de la tienda');
+    if (!$('nNombre').value.trim()) { $('nNombre').setAttribute('aria-invalid', 'true'); $('nNombre').focus(); return msg('newMsg', 'Pon el nombre de la tienda'); }
+    $('nNombre').removeAttribute('aria-invalid');
     if (!servicios.length) return msg('newMsg', 'Elige al menos una automatización');
     const btn = $('newBtn'); btn.disabled = true;
-    const r = await api('admin_crear', { nombre: $('nNombre').value, email: $('nEmail').value, telegram_chat_id: $('nChat').value,
+    const r = await api('admin_crear', { nombre: $('nNombre').value, email: $('nEmail').value.trim(), telegram_chat_id: $('nChat').value.trim(),
       servicios, conexiones: valores($('newForm'), 'ncon'), max_vigilancias: +$('nMax').value, frecuencia_horas: +$('nFreq').value });
     btn.disabled = false;
     if (!r.ok) return msg('newMsg', esc(r.error));
     const link = panelLink(r.token);
-    msg('newMsg', `Cliente creado. Su enlace (ya copiado):<br><a href="${esc(link)}" target="_blank" rel="noopener" style="word-break:break-all">${esc(link)}</a>`, 'ok');
-    copy(link); e.target.reset(); setTimeout(() => { $('newForm').hidden = true; }, 6000); $('nAutos').innerHTML = checks('nauto', AUTOS_OPC, ['monitor']); $('nCon').innerHTML = checks('ncon', CON_OPC, []); syncMon(); load();
+    $('nEmail').dataset.ultimo = $('nEmail').value.trim();
+    copy(link);
+    ['nNombre', 'nEmail', 'nChat'].forEach((i) => { $(i).value = ''; }); resetNuevo();
+    const email = $('nEmail').dataset.ultimo || '';
+    msg('newMsg', `Cliente creado. Su enlace (ya copiado):<br><a href="${esc(link)}" target="_blank" rel="noopener" style="word-break:break-all">${esc(link)}</a>`
+      + (email ? `<br><button type="button" class="btn sm" data-welcome="${esc(r.token)}" style="margin-top:var(--s2)">Enviarle el email de bienvenida</button>` : ''), 'ok');
+    await load();
   });
   if (key) load();
 })();

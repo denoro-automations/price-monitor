@@ -12,6 +12,7 @@ const CONSTS = { "'__ADMIN_KEY__'": "'clave-admin'", "'__PANEL_URL__'": "'https:
   "'__WF_FICHAS__'": "'wf-fichas'", "'__WF_STOCK__'": "'wf-stock'", "'__WF_CARRITOS__'": "'wf-carritos'", "'__WF_RESENAS__'": "'wf-resenas'",
   "'__WF_FACTURAS__'": "'wf-facturas'", "'__WF_INFORME__'": "'wf-informe'" };
 let n = 0;
+let p0;
 const ok = (c, m) => { assert.ok(c, m); n++; };
 const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); n++; };
 
@@ -94,6 +95,30 @@ async function api(body, clientes, estados = []) {
   eq([d.modo, d.clave], ['resumen', 'tokL:auto-resenas-resumen'], 'resumen semanal a mano');
   d = await api({ token: 'tokL', accion: 'auto_ejecutar', id: 'stock' }, [luz], [{ clave: 'tokL:auto-stock', resumen: JSON.stringify({ ultima: new Date().toISOString(), ok: true }) }]);
   eq(d.status, 429, 'no se puede lanzar dos veces seguidas');
+  d = await api({ token: 'tokL', accion: 'auto_ejecutar', id: 'stock' }, [luz], [{ clave: 'tokL:auto-stock', resumen: JSON.stringify({ ultima: '2026-09-01T00:00:00Z', ok: true, en_curso: new Date().toISOString() }) }]);
+  eq(d.status, 409, 'no se lanza si ya se está ejecutando');
+  d = await api({ token: 'tokL', accion: 'auto_ejecutar', id: 'stock' }, [luz], [{ clave: 'tokL:auto-stock', resumen: JSON.stringify({ ultima: '2026-09-01T00:00:00Z', ok: true, titulo: 'Anterior', en_curso: new Date(Date.now() - 20 * 60000).toISOString() }) }]);
+  eq(d.siguiente, 'ejecutar', 'una marca «en curso» de hace más de 15 min ya no bloquea');
+  const marca = JSON.parse(d.marca.resumen);
+  ok(d.marca.clave === 'tokL:auto-stock' && marca.en_curso && marca.titulo === 'Anterior', 'la marca conserva el último resultado mientras se ejecuta');
+  ok(!('proveedor' in d.config && d.config.proveedor === ''), 'los campos vacíos no pisan los valores por defecto');
+  p0 = A.ejecucionesPendientes(Date.parse('2026-09-28T08:00:00Z'), 'tokL', { stock: { activo: true, activado_en: '2026-09-01T00:00:00Z' } }, { 'tokL:auto-stock': { ultima: '2026-09-27T00:00:00Z', en_curso: '2026-09-28T07:55:00Z' } });
+  eq(p0, [], 'el planificador no lanza encima de una ejecución en curso');
+  const ef = A.entradaAutomatizacion({ token: 'x', nombre: 'Casa Luz', email: 'a@b.c' }, 'facturas', A.ajustesPorDefecto('facturas'), null, 'x:auto-facturas', 'avisos@denoro.test');
+  eq(ef.config.emisor, { nombre: 'Casa Luz' }, 'facturas de prueba a nombre de la tienda del cliente');
+  const ec = A.entradaAutomatizacion({ token: 'x', nombre: 'Casa Luz', email: 'a@b.c' }, 'carritos', A.ajustesPorDefecto('carritos'), null, 'x:auto-carritos', 'avisos@denoro.test');
+  ok(!('web' in ec.config) && ec.config.email_bajas === 'a@b.c', 'carritos de prueba: web de ejemplo y bajas al email del cliente');
+  r = A.limpiarAjustes('carritos', { fuente: 'http', carritos_url: 'https://luz.com/api/carritos', web: 'https://luz.com' }, {}, ['shopify', 'woocommerce']);
+  ok(!r.ok && /se instala en tu tienda/.test(r.error), 'carritos alojado: los carritos reales no se aceptan en el panel (los emails saldrían de Denoro)');
+  r = A.limpiarAjustes('carritos', {}, { fuente: 'http', carritos_url: 'https://luz.com/api/carritos' }, []);
+  ok(!r.ok && /se instala en tu tienda/.test(r.error), 'carritos alojado: un ajuste real ya guardado también se rechaza');
+  const eReal = A.entradaAutomatizacion({ token: 'x', nombre: 'Luz', email: 'a@b.c' }, 'carritos', { fuente: 'http', carritos_url: 'https://luz.com/c' }, null, 'x:auto-carritos', 'avisos@denoro.test');
+  ok(eReal.config.fuente === 'demo' && !eReal.config.carritos_url, 'carritos: aunque quede guardado un ajuste real, la entrada va en modo prueba');
+  r = A.limpiarAjustes('facturas', { fuente: 'woocommerce', enviar_al_cliente: true, emisor: { nombre: 'Luz SL', nif: 'B12345678', direccion: 'C/ Sol 1', cp_poblacion: '08001 Barcelona' } }, {}, ['woocommerce']);
+  ok(r.ok && r.ajustes.enviar_al_cliente === false, 'facturas alojadas: con pedidos reales no se envían a los compradores');
+  const fReal = A.entradaAutomatizacion({ token: 'x', nombre: 'Luz', email: 'a@b.c' }, 'facturas', { fuente: 'woocommerce', enviar_al_cliente: true }, null, 'x:auto-facturas', 'avisos@denoro.test');
+  ok(fReal.config.enviar_al_cliente === false, 'facturas: la entrada apaga el envío al comprador con pedidos reales');
+  ok(!A.AUTOS.find((a) => a.id === 'carritos').campos.some((f) => (f.opts || []).some((o) => o[0] === 'shopify')), 'carritos ya no ofrece Shopify (Shopify lo trae gratis)');
   d = await api({ token: 'tokL', accion: 'auto_ejecutar', id: 'stock' }, [{ ...luz, email: '', telegram_chat_id: '' }]);
   eq(d.status, 400, 'sin destino de avisos no se ejecuta');
   const sinCon = { ...luz, config: JSON.stringify({ ...cfgLuz, conexiones: [], servicios: { ...cfgLuz.servicios, stock: { ...cfgLuz.servicios.stock, ajustes: cfg2.servicios.stock.ajustes } } }) };
@@ -107,6 +132,13 @@ async function api(body, clientes, estados = []) {
   d = await api({ admin_key: 'clave-admin', accion: 'admin_listar' }, [antiguo, luz], [{ clave: 'tokL:auto-stock', token: 'tokL', resumen: JSON.stringify({ ultima: '2026-09-28T10:00:00Z', ok: false, error: 'Feed caído' }) }]);
   const fl = d.respuesta.clientes.find((c) => c.token === 'tokL');
   eq(fl.servicios.map((s) => [s.id, s.error]), [['stock', 'Feed caído'], ['resenas', null]], 'el admin ve los fallos de cada automatización');
+  d = await api({ admin_key: 'clave-admin', accion: 'admin_bienvenida', token: 'tokL' }, [luz]);
+  ok(d.siguiente === 'probar' && d.enviar_email && !d.enviar_telegram && d.email_to === luz.email, 'bienvenida: solo por email al cliente');
+  ok(d.email_html.includes('?t=tokL') && /Control de stock|stock/i.test(d.email_html) && !/__|undefined/.test(d.email_html), 'bienvenida: lleva su enlace y sus automatizaciones');
+  d = await api({ admin_key: 'clave-admin', accion: 'admin_bienvenida', token: 'tokL' }, [{ ...luz, email: '' }]);
+  eq(d.status, 400, 'bienvenida: sin email no se envía');
+  d = await api({ accion: 'admin_bienvenida', token: 'tokL' }, [luz]);
+  eq(d.status, 401, 'bienvenida: pide la clave de admin');
 
   // ================= planificador =================
   const lunes10 = Date.parse('2026-09-28T08:00:00Z');   // lunes 10:00 en Madrid
@@ -188,6 +220,13 @@ async function api(body, clientes, estados = []) {
   const panel = WF('panel-api.json').nodes.find((x) => x.name === 'HTML panel').parameters.jsCode;
   ok(panel.includes('--accent:#235b54') && panel.includes('Instrument Serif') && panel.includes('ejecucionesPendientes'), 'el panel lleva la hoja de estilos de la web y el catálogo');
   ok(!panel.includes('/*CSS*/') && !panel.includes('/*AUTOS*/'), 'sin marcadores sin sustituir');
+  // lo que rompió la barra de pestañas: la web tiene sus propias .tabs y las oculta sin la clase js
+  const html = new Function(`return (() => {${panel}\n})();`)()[0].json.html;
+  ok(/<html lang="es" class="js">/.test(html), 'el panel marca <html class="js"> como la web');
+  ok(!/class="tabs"|class="card"|class="autos"|class="auto"/.test(html.split('<script>')[0].split('</style>')[1] + html.split('/*AUTOS*/')[0].slice(-1)), 'el panel no reutiliza nombres de componentes de la web');
+  ok(!/class="(tabs|card|autos|auto|tab)[" ]/.test(html.slice(html.indexOf('</style>'))), 'ni en el HTML que pinta el script');
+  ok(html.includes('Volver al resumen') && html.includes('p-tip-btn'), 'volver al resumen y ayudas «i»');
+  for (const a of A.AUTOS) for (const f of a.campos.filter((x) => x.k)) ok(A.ayudaDe(a.id, f.k), `ayuda para ${a.id}.${f.k}`);
 
   console.log(`Panel único: ${n} comprobaciones OK`);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -223,6 +223,11 @@ figcaption{color:var(--faint);font-size:var(--t-xs);margin-top:var(--s3);max-wid
 .plan.featured li::before{background:var(--accent);opacity:1}
 .plan .btn{margin-top:var(--s2)}
 .note{margin-top:var(--s5);color:var(--muted);font-size:var(--t-sm);max-width:70ch}
+.extras{margin-top:var(--s7);padding-top:var(--s6);border-top:1px solid var(--rule)}
+.extras h3{margin:0 0 var(--s2)}
+.extras p{max-width:70ch}
+.extras .chips{margin:var(--s4) 0}
+.extras .hint{margin:0 0 var(--s4)}
 
 /* --- preguntas --- */
 .faq{margin-top:var(--s7);border-top:1px solid var(--rule)}

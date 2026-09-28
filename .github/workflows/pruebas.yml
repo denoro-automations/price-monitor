@@ -1,0 +1,46 @@
+# Pasa todas las pruebas en cada subida. Si algo falla, GitHub te manda un email.
+name: Pruebas
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: price-monitor
+      # El panel se construye a partir de los workflows de los otros dos repos
+      - uses: actions/checkout@v4
+        with:
+          repository: denoro-automations/ecommerce-automations
+          path: ecommerce-automations
+      - uses: actions/checkout@v4
+        with:
+          repository: denoro-automations/weekly-report
+          path: weekly-report
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Monitor (Python)
+        working-directory: price-monitor
+        run: |
+          pip install -r requirements-dev.txt
+          python -m pytest -q
+
+      - name: Construir el panel
+        working-directory: price-monitor/n8n/saas
+        run: python build.py
+
+      - name: Panel y automatizaciones (Node)
+        working-directory: price-monitor/n8n/saas
+        run: |
+          node test/test_saas.js
+          node test/test_panel_unico.js

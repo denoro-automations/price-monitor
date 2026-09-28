@@ -50,6 +50,32 @@ function vistaCliente(c) {
           estado: estadoDe(`${c.token}:auto-${a.id}`), estado_resumen: a.cada.semanal ? estadoDe(`${c.token}:auto-${a.id}-resumen`) : null }),
   };
 }
+// Email de bienvenida: el enlace del panel, lo que tiene contratado y los primeros pasos
+function emailBienvenida(nombre, link, autos) {
+  const e = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const p = 'margin:0 0 14px;font-size:15px;line-height:1.55;color:#191713';
+  const lista = autos.map((a) => `<li style="margin:0 0 8px"><b>${e(a.nombre)}</b><br><span style="color:#6e6a61">${e(a.resumen)}</span></li>`).join('');
+  return `<!doctype html><html lang="es"><body style="margin:0;background:#f4f3ef;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f3ef;padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border-radius:14px;padding:28px">
+<tr><td>
+<p style="margin:0 0 18px;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#6e6a61">Denoro Automations</p>
+<h1 style="margin:0 0 16px;font-size:22px;color:#191713">Hola, ${e(nombre)}: tu panel ya está listo</h1>
+<p style="${p}">Desde tu panel ves y ajustas tus automatizaciones, las pruebas con datos de ejemplo y lees el resultado de cada ejecución.</p>
+<p style="margin:22px 0"><a href="${e(link)}" style="background:#235b54;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;font-weight:600;display:inline-block">Abrir mi panel</a></p>
+<p style="${p};font-size:13px;color:#6e6a61">Guarda este email: el enlace es tu llave de acceso, así que no lo compartas. Si lo pierdes o crees que alguien más lo tiene, respóndeme y te hago uno nuevo.</p>
+${lista ? `<h2 style="margin:24px 0 10px;font-size:16px;color:#191713">Lo que tienes activado</h2><ul style="margin:0 0 14px;padding-left:18px;font-size:14px;line-height:1.5;color:#191713">${lista}</ul>` : ''}
+<h2 style="margin:24px 0 10px;font-size:16px;color:#191713">Primeros pasos</h2>
+<ol style="margin:0 0 14px;padding-left:18px;font-size:14px;line-height:1.6;color:#191713">
+<li>Abre el panel y entra en cada automatización.</li>
+<li>Pulsa «Ejecutar ahora» con los datos de ejemplo para ver cómo queda.</li>
+<li>En «Avisos», comprueba tu email o añade Telegram si prefieres recibirlos allí.</li>
+</ol>
+<p style="${p}">Cualquier duda, responde a este email.</p>
+<p style="margin:0;font-size:15px;color:#191713">Manel<br><span style="color:#6e6a61">Denoro Automations</span></p>
+</td></tr></table></td></tr></table></body></html>`;
+}
+
 const guardar = (c, cfg, respuesta) => [{ json: {
   siguiente: 'guardar', status: 200,
   fila: { token: c.token, nombre: c.nombre, email: c.email || '', telegram_chat_id: String(c.telegram_chat_id || ''), activo: Boolean(c.activo), config: JSON.stringify(cfg) },
@@ -104,6 +130,15 @@ if (accion.startsWith('admin_')) {
     if (body.conexiones !== undefined) cfg.conexiones = (Array.isArray(body.conexiones) ? body.conexiones : []).filter((x) => CONEXIONES[x]);
     return guardar(c, cfg, { ok: true });
   }
+  if (accion === 'admin_bienvenida') {
+    if (!c.email) return fail(400, 'Este cliente no tiene email: añádelo antes de enviarle la bienvenida');
+    const link = `${PANEL_URL}?t=${c.token}`;
+    const autos = AUTOS.filter((a) => serviciosDe(parse(c.config, {}))[a.id]?.activo);
+    return [{ json: { siguiente: 'probar', status: 200, token: c.token, email_to: c.email, email_from: EMAIL_FROM,
+      enviar_telegram: false, enviar_email: true, telegram_chat_id: '', telegram: '',
+      mensaje_ok: `Bienvenida enviada a ${c.email}.`,
+      asunto: `Tu panel de Denoro Automations · ${cleanText(c.nombre)}`, email_html: emailBienvenida(c.nombre, link, autos) } }];
+  }
   return fail(400, 'Acción de administrador desconocida');
 }
 
@@ -134,11 +169,14 @@ if (accion === 'auto_guardar' || accion === 'auto_ejecutar') {
   const modo = id === 'resenas' ? (body.modo === 'resumen' ? 'resumen' : 'vigilancia') : null;
   const clave = `${c.token}:auto-${id}${modo === 'resumen' ? '-resumen' : ''}`;
   const previo = estadoDe(clave);
-  if (previo?.ultima && Date.now() - new Date(previo.ultima).getTime() < 60000) return fail(429, 'Acaba de ejecutarse. Espera un minuto.');
+  if (previo?.en_curso && Date.now() - new Date(previo.en_curso).getTime() < EN_CURSO_MS) return fail(409, 'Ya se está ejecutando. En cuanto termine verás aquí el resultado.');
+  if (previo?.ultima && Date.now() - new Date(previo.ultima).getTime() < 60000) return fail(429, 'Acaba de ejecutarse. Espera un minuto antes de lanzarla otra vez.');
   // Revalida lo guardado por si cambió la conexión desde entonces
   const val = limpiarAjustes(id, {}, serv[id].ajustes, conexionesDe(cfg));
   if (!val.ok) return fail(400, val.error);
-  return [{ json: { siguiente: 'ejecutar', status: 200, workflow_id: wf,
+  // Se marca «en curso» antes de lanzarla: evita que el planificador la lance a la vez
+  const marca = { clave, token: c.token, snapshot: '', resumen: JSON.stringify({ ...(previo || {}), en_curso: new Date().toISOString() }) };
+  return [{ json: { siguiente: 'ejecutar', status: 200, workflow_id: wf, marca,
     ...entradaAutomatizacion(c, id, val.ajustes, modo, clave, EMAIL_FROM) } }];
 }
 
@@ -202,7 +240,7 @@ if (accion === 'probar_aviso') {
     telegram_chat_id: c.telegram_chat_id || '', email_to: c.email || '', email_from: EMAIL_FROM,
     enviar_telegram: Boolean(c.telegram_chat_id), enviar_email: Boolean(c.email),
     telegram: `<b>Denoro · ${esc(c.nombre)}</b>\n🔔 Aviso de prueba: así te llegarán los avisos de tus automatizaciones.`,
-    asunto: '🔔 Denoro · Aviso de prueba', email_html: m.email_html.replace('Sin cambios desde la última revisión.', '🔔 Aviso de prueba: así te llegarán los avisos de tus automatizaciones.'),
+    asunto: '🔔 Denoro · Aviso de prueba', email_html: m.email_html.replace('Denoro · Monitor de precios', 'Denoro Automations').replace('Sin cambios desde la última revisión.', '🔔 Aviso de prueba: así te llegarán los avisos de tus automatizaciones.'),
   } }];
 }
 

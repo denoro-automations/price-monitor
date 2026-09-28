@@ -167,12 +167,15 @@ def panel_api():
         node("Resultado revisión", "n8n-nodes-base.code", 2, [940, 660], {"jsCode": js("resultado-revision.js")}, executeOnce=True),
         respond("Responder revisión", [1160, 660], "={{ $json.respuesta }}", "={{ $json.status }}"),
 
-        execute("Ejecutar automatización", [720, 860], workflow="={{ $json.workflow_id }}", onError="continueRegularOutput", alwaysOutputData=True),
-        node("Resultado ejecución", "n8n-nodes-base.code", 2, [940, 860], {"jsCode": js("ejecutar-resultado.js")}, executeOnce=True),
-        c.gate("¿Ha fallado?", "fallo", [1160, 860]),
-        node("Fila de error", "n8n-nodes-base.code", 2, [1380, 780], {"jsCode": js("fila-error.js")}),
-        dt_upsert("Guardar error", [1600, 780], "ESTADO", "denoro_estado", "clave"),
-        respond("Responder ejecución", [1820, 880], "={{ $('Resultado ejecución').first().json.respuesta }}",
+        node("Marcar en curso", "n8n-nodes-base.code", 2, [720, 860], {"jsCode": js("marcar-en-curso.js")}),
+        dt_upsert("Guardar en curso", [940, 860], "ESTADO", "denoro_estado", "clave"),
+        node("Recuperar petición", "n8n-nodes-base.code", 2, [1160, 860], {"jsCode": js("recuperar-peticion.js")}),
+        execute("Ejecutar automatización", [1380, 860], workflow="={{ $json.workflow_id }}", onError="continueRegularOutput", alwaysOutputData=True),
+        node("Resultado ejecución", "n8n-nodes-base.code", 2, [1600, 860], {"jsCode": js("ejecutar-resultado.js")}, executeOnce=True),
+        c.gate("¿Ha fallado?", "fallo", [1820, 860]),
+        node("Fila de error", "n8n-nodes-base.code", 2, [2040, 780], {"jsCode": js("fila-error.js")}),
+        dt_upsert("Guardar error", [2260, 780], "ESTADO", "denoro_estado", "clave"),
+        respond("Responder ejecución", [2480, 880], "={{ $('Resultado ejecución').first().json.respuesta }}",
                 "={{ $('Resultado ejecución').first().json.status }}"),
     ]
     conns = c.link(
@@ -186,7 +189,8 @@ def panel_api():
         ("¿Qué hago?", "Revisar este cliente", 2), ("Revisar este cliente", "Resultado revisión"),
         ("Resultado revisión", "Responder revisión"),
         ("¿Qué hago?", "Responder", 3),
-        ("¿Qué hago?", "Ejecutar automatización", 4), ("Ejecutar automatización", "Resultado ejecución"),
+        ("¿Qué hago?", "Marcar en curso", 4), ("Marcar en curso", "Guardar en curso"), ("Guardar en curso", "Recuperar petición"),
+        ("Recuperar petición", "Ejecutar automatización"), ("Ejecutar automatización", "Resultado ejecución"),
         ("Resultado ejecución", "¿Ha fallado?"), ("¿Ha fallado?", "Fila de error", 0), ("Fila de error", "Guardar error"),
         ("Guardar error", "Responder ejecución"), ("¿Ha fallado?", "Responder ejecución", 1),
     )
@@ -315,14 +319,19 @@ def planificador_autos():
                            "conditions": [{"id": str(uuid.uuid5(NS, "gate-saltar")), "leftValue": "={{ $json.saltar }}", "rightValue": "",
                                            "operator": {"type": "boolean", "operation": "true", "singleValue": True}}],
                            "combinator": "and"}, "options": {}}),
-        execute("Ejecutar automatización", [900, 160], workflow="={{ $json.workflow_id }}", onError="continueRegularOutput"),
-        node("Anotar fallos", "n8n-nodes-base.code", 2, [1120, 80], {"jsCode": js("planificador-anotar.js")}, alwaysOutputData=False),
-        dt_upsert("Guardar fallos", [1340, 80], "ESTADO", "denoro_estado", "clave"),
+        node("Marcar en curso", "n8n-nodes-base.code", 2, [900, 200], {"jsCode": js("planificador-en-curso.js")}),
+        dt_upsert("Guardar en curso", [1120, 200], "ESTADO", "denoro_estado", "clave"),
+        node("Recuperar lanzables", "n8n-nodes-base.code", 2, [1340, 200], {"jsCode": js("planificador-lanzables.js")}, executeOnce=True),
+        execute("Ejecutar automatización", [1560, 200], workflow="={{ $json.workflow_id }}", onError="continueRegularOutput"),
+        node("Anotar fallos", "n8n-nodes-base.code", 2, [1780, 80], {"jsCode": js("planificador-anotar.js")}, alwaysOutputData=False),
+        dt_upsert("Guardar fallos", [2000, 80], "ESTADO", "denoro_estado", "clave"),
     ]
     conns = c.link(("Cada 30 minutos", "Leer clientes"), ("Probar manualmente", "Leer clientes"),
                    ("Leer clientes", "Leer estado"), ("Leer estado", "Automatizaciones pendientes"),
                    ("Automatizaciones pendientes", "¿Se puede ejecutar?"),
-                   ("¿Se puede ejecutar?", "Anotar fallos", 0), ("¿Se puede ejecutar?", "Ejecutar automatización", 1),
+                   ("¿Se puede ejecutar?", "Anotar fallos", 0), ("¿Se puede ejecutar?", "Marcar en curso", 1),
+                   ("Marcar en curso", "Guardar en curso"), ("Guardar en curso", "Recuperar lanzables"),
+                   ("Recuperar lanzables", "Ejecutar automatización"),
                    ("Ejecutar automatización", "Anotar fallos"), ("Anotar fallos", "Guardar fallos"))
     return c.workflow("Denoro SaaS — Planificador de automatizaciones", nodes, conns)
 
