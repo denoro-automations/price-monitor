@@ -321,7 +321,7 @@ const metaPage = `<html><head><meta property="og:title" content="Silla ergonómi
   assert.strictEqual(r.enviar, true);
   assert.ok(r.telegram.includes('Ana Ruiz') && r.telegram.includes('rival2.test'));
   assert.ok(r.email_html.includes('&lt;b&gt;infantil&lt;/b&gt;'), 'escapa el HTML del mensaje');
-  assert.strictEqual(r.asunto, '💰 Presupuesto · Ana Ruiz (https://mitienda.test)');
+  assert.strictEqual(r.asunto, '💰 Presupuesto · Ana Ruiz (https://mitienda.test)', 'formulario antiguo: asunto sin automatización');
   r = (await call({ ...base, email: 'mal' }))[0].json;
   assert.deepStrictEqual([r.status, r.enviar], [400, false]);
   r = (await call({ ...base, competidores: '   ' }))[0].json;
@@ -330,5 +330,19 @@ const metaPage = `<html><head><meta property="og:title" content="Silla ergonómi
   assert.deepStrictEqual([r.status, r.enviar], [200, undefined], 'los bots reciben 200 y no se envía nada');
   r = (await call(JSON.stringify(base)))[0].json;                      // body como texto (Content-Type text/plain)
   assert.strictEqual(r.enviar, true);
+  // formulario nuevo (web 28-sep): automatización + detalle + plan; competidores repetido por compatibilidad
+  const nuevo = { nombre: 'Luis', email: 'luis@tienda.test', automatizacion: 'stock', plan: 'estandar', paquete: 'stock · estandar',
+                  detalle: 'Mi proveedor manda un CSV <cada> día: https://prov.test/feed.csv', competidores: 'x', productos: 'ns', idioma: 'es' };
+  r = (await call(nuevo))[0].json;
+  assert.strictEqual(r.enviar, true);
+  assert.strictEqual(r.automatizacion, 'Stock del proveedor');
+  assert.strictEqual(r.paquete, 'Estándar · 349 €');
+  assert.ok(r.telegram.startsWith('💰 <b>Nueva solicitud · Stock del proveedor</b>'));
+  assert.ok(r.telegram.includes('&lt;cada&gt;') && r.telegram.includes('• https://prov.test/feed.csv'));
+  assert.strictEqual(r.asunto, '💰 Presupuesto · Stock del proveedor · Luis');
+  r = (await call({ ...nuevo, detalle: 'Facturas a mano cada semana', automatizacion: 'facturas' }))[0].json;
+  assert.ok(!r.telegram.includes('Enlaces ('), 'sin enlaces no pinta la lista');
+  r = (await call({ ...nuevo, detalle: '  ', competidores: '' }))[0].json;
+  assert.strictEqual(r.status, 400);
   console.log('Solicitudes de la web: OK');
 })().catch((e) => { console.error(e); process.exit(1); });
