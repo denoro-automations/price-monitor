@@ -89,3 +89,11 @@ Tests: `node n8n/saas/test/test_panel_unico.js` (catálogo, API, planificador y 
 - **En curso:** antes de lanzar una automatización se marca `en_curso` en `denoro_estado`; ni el botón ni el planificador lanzan otra encima durante 15 min (evita facturar dos veces).
 - Campos vacíos ya no pisan los valores por defecto; facturas de prueba a nombre de la tienda del cliente; carritos reales exigen la web de la tienda; el error señala el campo que falla.
 - Accesibilidad revisada: etiquetas en todos los campos, contraste AA en las tarjetas grises, zonas táctiles de 44 px, sin desborde horizontal en móvil.
+
+## Cambios del control de calidad (28-sep-2026, noche)
+
+- **Carritos en el panel alojado: solo modo prueba.** La opción de carritos reales sale desactivada («se instala en tu tienda») y `limpiarAjustes` la rechaza; si quedara guardada de antes, `entradaAutomatizacion` la pasa a modo prueba. Motivo: los emails a compradores tienen que salir del dominio de la tienda, no del Gmail de Denoro. Se quita Shopify de carritos (Shopify ya lo trae gratis).
+- **Facturas con pedidos reales desde el panel:** se generan y llega el resumen, pero nunca se envían a los compradores (`enviar_al_cliente` se fuerza a `false`).
+- **Email de bienvenida:** botón en el admin (y tras crear un cliente) → acción `admin_bienvenida`, que reutiliza la rama de prueba de avisos para mandar el enlace del panel, lo contratado y los primeros pasos.
+- **GitHub Actions:** `.github/workflows/pruebas.yml` (pytest + build + pruebas del panel en cada subida) y `vigilancia.yml` (cada 30 min comprueba que `app.denoroautomations.com` sirve el panel y que la API responde 401 a un token falso; si falla, GitHub manda un email). Para subir ficheros de `.github/workflows` el `gh` del PC necesita el permiso `workflow`: `gh auth refresh -s workflow`.
+- **Servidor fijo:** `../servidor/` tiene el `docker-compose.yml` (n8n + Gotenberg + túnel) y `MIGRAR.md` con los pasos.
