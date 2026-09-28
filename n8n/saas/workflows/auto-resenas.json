@@ -288,28 +288,15 @@
     {
       "id": "aa872662-0d37-5e76-a8d7-3c0ea2e5d4dc",
       "name": "Reseñas WooCommerce",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         940,
         460
       ],
       "parameters": {
-        "url": "={{ $json.woo_url }}/wp-json/wc/v3/products/reviews?per_page=100&status=approved",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "wooCommerceApi",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "json"
-            }
-          },
-          "timeout": 30000
-        }
-      },
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
+        "jsCode": "// Versión para el panel: la conexión con WooCommerce de cada cliente se configura aparte.\nthrow new Error('La conexión con WooCommerce de esta tienda aún no está hecha. Escríbeme y la dejo configurada.');"
+      }
     },
     {
       "id": "b66567ee-29c0-55d9-b31f-8693abe96037",

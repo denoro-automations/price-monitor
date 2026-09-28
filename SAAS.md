@@ -62,3 +62,22 @@ Los avisos salen del bot de Telegram y de la cuenta SMTP de Denoro: el cliente n
 
 ## Para publicarlo en internet
 Todo esto corre en el n8n local. Para que un cliente entre desde fuera hace falta exponer n8n con un túnel (Cloudflare) o moverlo a un servidor, y poner `WEBHOOK_URL` para que los enlaces del panel salgan con el dominio bueno.
+
+## Panel único (28-sep-2026): las siete automatizaciones en un solo panel
+El mismo panel y el mismo admin sirven ahora para las siete automatizaciones del catálogo, con la hoja de estilos de la web (`web/src/styles.css`, copiada en `src/web-styles.css`) más `src/panel.css`.
+
+- **Admin** (`/webhook/denoro/admin`): alta del cliente eligiendo qué automatizaciones tiene, plan del monitor y cuentas conectadas (Shopify, WooCommerce, OpenAI). Editar, pausar, copiar enlace.
+- **Panel del cliente** (`/webhook/denoro/panel?t=TOKEN`): pestaña *Resumen*, una pestaña por automatización contratada (ajustes, estado, último resultado y botón **Ejecutar ahora**) y *Avisos* (email y Telegram comunes).
+- Los clientes de antes siguen con su monitor (sin `servicios` en su config = solo monitor).
+
+| Pieza | Qué hace |
+|---|---|
+| `src/automatizaciones.js` | Catálogo: campos de cada automatización, valores por defecto, validación (`limpiarAjustes`), horarios (`ejecucionesPendientes`). Lo usan la API, el planificador y los dos paneles. |
+| `automatizaciones_cliente.py` | Genera `workflows/auto-*.json` a partir del `workflow.json` de cada automatización: entra por *Execute Workflow Trigger*, mezcla los ajustes del cliente sobre el bloque CONFIGURACIÓN, separa la memoria por cliente y anota el resultado en `denoro_estado` (`token:auto-<id>`). |
+| **Denoro SaaS — Planificador de automatizaciones** | Cada 30 min lanza, cliente a cliente, las que tocan. Los fallos se anotan en el panel. |
+
+Marcadores nuevos al instalar: `__WF_FICHAS__`, `__WF_STOCK__`, `__WF_CARRITOS__`, `__WF_RESENAS__`, `__WF_FACTURAS__`, `__WF_INFORME__` (IDs de los workflows «Denoro SaaS — …») y `__WORKFLOW_ERRORES__`.
+
+**Límite actual:** en las versiones del panel, los nodos de Shopify, WooCommerce y OpenAI se sustituyen por un aviso claro, porque una credencial de n8n vale para una sola tienda. Funcionan los datos de ejemplo, CSV, feeds XML/CSV y enlaces públicos. Conectar la tienda de cada cliente (credencial por cliente) es el siguiente paso.
+
+Tests: `node n8n/saas/test/test_panel_unico.js` (catálogo, API, planificador y las seis automatizaciones de punta a punta con un mini-ejecutor de n8n). Vista local sin n8n: `node n8n/saas/test/servidor-local.js`.

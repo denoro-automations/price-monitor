@@ -129,48 +129,29 @@
     {
       "id": "9aebc554-787f-5138-afbe-3e4667419739",
       "name": "Pedidos Shopify",
-      "type": "n8n-nodes-base.shopify",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         700,
         100
       ],
       "parameters": {
-        "authentication": "accessToken",
-        "resource": "order",
-        "operation": "getAll",
-        "returnAll": true,
-        "options": {
-          "status": "any",
-          "createdAtMin": "={{ $json.periodo.pedir_desde }}"
-        }
-      },
-      "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
+        "jsCode": "// Versión para el panel: la conexión con Shopify de cada cliente se configura aparte.\nthrow new Error('La conexión con Shopify de esta tienda aún no está hecha. Escríbeme y la dejo configurada.');"
+      }
     },
     {
       "id": "6658496f-b5ea-5fda-a22e-1f3ad23ed9ce",
       "name": "Productos Shopify",
-      "type": "n8n-nodes-base.shopify",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         920,
         100
       ],
       "parameters": {
-        "authentication": "accessToken",
-        "resource": "product",
-        "operation": "getAll",
-        "returnAll": true,
-        "additionalFields": {}
+        "jsCode": "// Versión para el panel: la conexión con Shopify de cada cliente se configura aparte.\nthrow new Error('La conexión con Shopify de esta tienda aún no está hecha. Escríbeme y la dejo configurada.');"
       },
-      "executeOnce": true,
-      "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
+      "executeOnce": true
     },
     {
       "id": "ca02975e-36be-529a-a5d7-9894016a2992",
@@ -188,45 +169,29 @@
     {
       "id": "b0d0e29c-9aa2-5403-b218-afb7e44c0b39",
       "name": "Pedidos WooCommerce",
-      "type": "n8n-nodes-base.wooCommerce",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         700,
         320
       ],
       "parameters": {
-        "resource": "order",
-        "operation": "getAll",
-        "returnAll": true,
-        "options": {
-          "after": "={{ $json.periodo.pedir_desde }}"
-        }
-      },
-      "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
+        "jsCode": "// Versión para el panel: la conexión con WooCommerce de cada cliente se configura aparte.\nthrow new Error('La conexión con WooCommerce de esta tienda aún no está hecha. Escríbeme y la dejo configurada.');"
+      }
     },
     {
       "id": "dd52cc39-fdb7-54dc-9cf6-ae2276190d7a",
       "name": "Productos WooCommerce",
-      "type": "n8n-nodes-base.wooCommerce",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         920,
         320
       ],
       "parameters": {
-        "resource": "product",
-        "operation": "getAll",
-        "returnAll": true,
-        "options": {}
+        "jsCode": "// Versión para el panel: la conexión con WooCommerce de cada cliente se configura aparte.\nthrow new Error('La conexión con WooCommerce de esta tienda aún no está hecha. Escríbeme y la dejo configurada.');"
       },
-      "executeOnce": true,
-      "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
+      "executeOnce": true
     },
     {
       "id": "b66567ee-29c0-55d9-b31f-8693abe96037",

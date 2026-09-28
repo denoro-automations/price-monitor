@@ -71,6 +71,17 @@ def _conectar(conns, src, dst, out=0):
     main[out].append({"node": dst, "type": "main", "index": 0})
 
 
+def _servicio_con_credencial(n):
+    t, p = n["type"], n.get("parameters", {})
+    if t == "n8n-nodes-base.shopify":
+        return "Shopify"
+    if t == "n8n-nodes-base.wooCommerce":
+        return "WooCommerce"
+    if t == "n8n-nodes-base.httpRequest" and p.get("authentication") == "predefinedCredentialType":
+        return {"shopifyAccessTokenApi": "Shopify", "wooCommerceApi": "WooCommerce", "openAiApi": "OpenAI"}.get(p.get("nodeCredentialType"), "tu tienda")
+    return None
+
+
 def version_cliente(auto_id, table_estado):
     ruta, nombre, sin_novedad = ORIGENES[auto_id]
     wf = copy.deepcopy(json.loads((RAIZ / ruta).read_text(encoding="utf-8")))
@@ -110,6 +121,18 @@ def version_cliente(auto_id, table_estado):
         code = n["parameters"].get("jsCode")
         if code and "$getWorkflowStaticData('global')" in code:
             n["parameters"]["jsCode"] = ESTADO_CLIENTE + code.replace("$getWorkflowStaticData('global')", "__estadoCliente()")
+
+    # 3b) conexiones con credencial propia (Shopify, WooCommerce, OpenAI): una credencial de n8n vale para
+    #     UNA tienda, no para cada cliente. Hasta que cada cliente tenga la suya, el nodo se sustituye por uno
+    #     que se para con un mensaje claro (el panel ya no deja elegir esas fuentes sin la conexión hecha).
+    for n in nodes:
+        servicio = _servicio_con_credencial(n)
+        if servicio:
+            n.update({"type": "n8n-nodes-base.code", "typeVersion": 2, "parameters": {"jsCode": (
+                f"// Versión para el panel: la conexión con {servicio} de cada cliente se configura aparte.\n"
+                f"throw new Error('La conexión con {servicio} de esta tienda aún no está hecha. Escríbeme y la dejo configurada.');")}})
+            for k in ("credentials", "onError", "alwaysOutputData", "retryOnFail", "maxTries", "waitBetweenTries"):
+                n.pop(k, None)
 
     # 4) resultado para el panel, colgando del nodo que monta el aviso
     informes = [s for s, c in conns.items() for salida in c["main"] for d in salida if d["node"] == "¿Email activo?"]

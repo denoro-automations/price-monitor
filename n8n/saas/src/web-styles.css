@@ -56,7 +56,7 @@ p{margin:0;text-wrap:pretty}
 .stack>*+*{margin-top:var(--s4)}
 
 /* --- cabecera (la misma en todas las páginas: src/partials/header.html) --- */
-.site-header{position:sticky;top:0;z-index:var(--z-header);background:color-mix(in srgb,var(--paper) 90%,transparent);
+.site-header{position:sticky;top:0;z-index:var(--z-header);background:var(--paper);background:color-mix(in srgb,var(--paper) 92%,transparent);
   backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--rule)}
 .site-header .wrap{display:flex;align-items:center;gap:var(--s5);min-height:68px;position:relative}
 .brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;font-weight:600;font-size:17px;letter-spacing:-.01em;flex:none}
@@ -95,8 +95,8 @@ p{margin:0;text-wrap:pretty}
   html:not(.js) .menu{order:3;width:100%;flex-wrap:wrap;gap:var(--s2) var(--s4);margin:0}
 }
 @keyframes menu-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
-@media (max-width:620px){.site-header .wrap{gap:var(--s3)}.header-actions .header-cta{display:none}.brand span{display:none}
-  .js .menu{padding-inline:20px}}
+@media (max-width:760px){.site-header .wrap{gap:var(--s3)}.header-actions .header-cta{display:none}}
+@media (max-width:620px){.brand span{display:none}.js .menu{padding-inline:20px}}
 @media (max-width:360px){.menu-btn [data-i18n]{display:none}.menu-btn{padding:0 13px}}
 
 /* --- selector de idioma --- */
@@ -210,7 +210,7 @@ figcaption{color:var(--faint);font-size:var(--t-xs);margin-top:var(--s3);max-wid
   border:1px solid var(--rule);border-radius:var(--r-l)}
 @media (min-width:880px){.plan{border:0;border-radius:0}}
 .plan.featured{background:var(--sunk)}
-.plan header{display:grid;gap:var(--s1);min-height:118px;align-content:start}
+.plan header{display:grid;gap:var(--s1);align-content:start}
 @media (max-width:879px){.plan header{min-height:0;margin-bottom:var(--s2)}}
 .plan-tag{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
 .plan.featured .plan-tag{color:var(--accent)}
@@ -276,7 +276,7 @@ footer a:hover{color:var(--ink);border-color:var(--ink)}
 
 /* --- barra de contacto en móvil --- */
 .mobile-cta{position:fixed;left:0;right:0;bottom:0;z-index:var(--z-cta);
-  background:color-mix(in srgb,var(--paper) 94%,transparent);backdrop-filter:blur(10px);
+  background:var(--paper);background:color-mix(in srgb,var(--paper) 94%,transparent);backdrop-filter:blur(10px);
   border-top:1px solid var(--rule);padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
   animation:cta-in var(--d-base) var(--e-out)}
 @keyframes cta-in{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:none}}
@@ -374,7 +374,8 @@ html:not(.js) .tabs{display:none}
 .tabpanel .plans{margin-top:var(--s5)}
 .js .tabpanel-title{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 html:not(.js) .tabpanel{margin-top:var(--s7)}
-.tabpanel[hidden]{display:none}
+html:not(.js) .tabpanel[hidden]{display:block}
+.js .tabpanel[hidden]{display:none}
 .tabpanel:not([hidden]){animation:faq-in var(--d-enter) var(--e-out) both}
 .plan li b{color:var(--ink);font-weight:600}
 
@@ -414,3 +415,11 @@ html:not(.js) .tabpanel{margin-top:var(--s7)}
 .plan ul{align-content:start}
 @media (max-width:999px){.home-page .hero-index{display:none}}
 @media (max-width:420px){.hero-index-head span+span{display:none}}
+
+/* precios: una línea que resume el paquete, alineada en las tres columnas */
+.plan-what{font-size:var(--t-body);font-weight:600;color:var(--ink);line-height:1.4;padding-top:var(--s4);border-top:1px solid var(--rule)}
+@media (min-width:880px){.plan-what{min-height:3.8em}}
+@media (max-width:620px){
+  .tabs{display:grid;grid-template-columns:1fr;gap:var(--s2)}
+  .tabs [role="tab"]{border-radius:var(--r-s);text-align:left;justify-content:flex-start;width:100%}
+}

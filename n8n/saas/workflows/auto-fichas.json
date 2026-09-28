@@ -189,23 +189,15 @@
     {
       "id": "6658496f-b5ea-5fda-a22e-1f3ad23ed9ce",
       "name": "Productos Shopify",
-      "type": "n8n-nodes-base.shopify",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         700,
         220
       ],
       "parameters": {
-        "authentication": "accessToken",
-        "resource": "product",
-        "operation": "getAll",
-        "returnAll": true,
-        "additionalFields": {}
-      },
-      "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
+        "jsCode": "// Versión para el panel: la conexión con Shopify de cada cliente se configura aparte.\nthrow new Error('La conexión con Shopify de esta tienda aún no está hecha. Escríbeme y la dejo configurada.');"
+      }
     },
     {
       "id": "ca02975e-36be-529a-a5d7-9894016a2992",
@@ -223,22 +215,15 @@
     {
       "id": "dd52cc39-fdb7-54dc-9cf6-ae2276190d7a",
       "name": "Productos WooCommerce",
-      "type": "n8n-nodes-base.wooCommerce",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         700,
         420
       ],
       "parameters": {
-        "resource": "product",
-        "operation": "getAll",
-        "returnAll": true,
-        "options": {}
-      },
-      "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
+        "jsCode": "// Versión para el panel: la conexión con WooCommerce de cada cliente se configura aparte.\nthrow new Error('La conexión con WooCommerce de esta tienda aún no está hecha. Escríbeme y la dejo configurada.');"
+      }
     },
     {
       "id": "b66567ee-29c0-55d9-b31f-8693abe96037",
@@ -376,29 +361,15 @@
     {
       "id": "9e06e3fa-49b8-574f-8d29-42b97168e0a2",
       "name": "Pedir la ficha a la IA",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         1840,
         120
       ],
       "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "openAiApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: $json.modelo, temperature: 0.4, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: $json.prompt_sistema }, { role: 'user', content: $json.prompt_usuario }] }) }}",
-        "options": {
-          "timeout": 120000
-        }
-      },
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 2,
-      "waitBetweenTries": 5000
+        "jsCode": "// Versión para el panel: la conexión con OpenAI de cada cliente se configura aparte.\nthrow new Error('La conexión con OpenAI de esta tienda aún no está hecha. Escríbeme y la dejo configurada.');"
+      }
     },
     {
       "id": "95ecdf35-972e-59f9-928a-c8b4599619a9",
