@@ -4,58 +4,85 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Denoro · Administración</title>
+<meta name="theme-color" content="#fcfcfa">
+<title>Administración · Denoro Automations</title>
+<link rel="icon" href="https://denoroautomations.com/assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <style>/*CSS*/</style>
 </head>
-<body>
-<header class="top"><div class="wrap">
-  <div class="brand"><i>D</i>Denoro <small>Administración</small></div>
-  <div class="spacer"></div>
-  <button id="logout" type="button" class="ghost" hidden>Salir</button>
-</div></header>
-<main class="wrap">
-  <section id="login" class="center"><form id="loginForm" class="card" style="width:min(380px,100%);text-align:left">
-    <h2>Entrar</h2><p class="hint" style="margin:0 0 14px">Introduce tu clave de administrador.</p>
-    <div class="field"><label for="key">Clave</label><input id="key" type="password" autocomplete="current-password" required></div>
-    <button class="primary" style="width:100%">Entrar</button><div id="loginMsg"></div>
-  </form></section>
+<body class="app">
+<a class="skip" href="#main">Ir al contenido</a>
+<header>
+  <div class="wrap">
+    <a class="brand" href="https://denoroautomations.com/" target="_blank" rel="noopener"><i aria-hidden="true">D</i>Denoro <span>Administración</span></a>
+    <div class="who"><button id="logout" type="button" class="btn ghost sm" hidden>Salir</button></div>
+  </div>
+</header>
 
-  <section id="dash" hidden>
-    <h1>Clientes</h1>
-    <p class="sub">Da de alta a cada cliente y envíale su enlace privado: desde ahí elige qué tiendas vigilar.</p>
-    <div class="stats">
-      <div class="stat"><b class="num" id="sClients">0</b><span>clientes activos</span></div>
-      <div class="stat"><b class="num" id="sLinks">0</b><span>enlaces vigilados</span></div>
-      <div class="stat"><b class="num" id="sErrors">0</b><span>enlaces con error</span></div>
+<main id="main"><div class="wrap">
+  <div id="login" class="center">
+    <form id="loginForm" class="p-card login" novalidate>
+      <p class="eyebrow">Denoro Automations</p>
+      <h2>Entrar</h2>
+      <p>Introduce tu clave de administrador.</p>
+      <div class="field" style="margin-top:var(--s5)"><label for="key">Clave</label><input id="key" type="password" autocomplete="current-password" required></div>
+      <button class="btn primary full" id="loginBtn">Entrar</button>
+      <div id="loginMsg"></div>
+    </form>
+  </div>
+
+  <div id="dash" hidden>
+    <div class="p-hero">
+      <p class="eyebrow">Administración</p>
+      <h1>Clientes</h1>
+      <p class="lead">Da de alta a cada cliente, elige qué automatizaciones tiene y mándale su enlace privado. Desde ahí lo ajusta todo él.</p>
+      <dl class="facts">
+        <div><dt>Clientes activos</dt><dd><span class="big num" id="sClients">0</span></dd></div>
+        <div><dt>Automatizaciones en marcha</dt><dd><span class="big num" id="sAutos">0</span></dd></div>
+        <div><dt>Con error</dt><dd><span class="big num" id="sErrors">0</span></dd></div>
+      </dl>
     </div>
-    <div class="grid">
-      <div class="card">
-        <div style="overflow-x:auto"><table>
-          <thead><tr><th>Cliente</th><th class="r">Enlaces</th><th class="hide-s">Última revisión</th><th>Estado</th><th></th></tr></thead>
+    <div style="padding-bottom:var(--s8)">
+      <form class="p-card" id="newForm" novalidate hidden>
+        <div class="card-head"><div><p class="eyebrow" style="margin-bottom:var(--s3)">Alta</p><h2>Nuevo cliente</h2></div><button type="button" class="btn ghost sm" id="newClose">Cerrar</button></div>
+        <div class="p-grid" style="gap:var(--s6)">
+          <div>
+            <fieldset><div class="fgrid">
+              <div class="field full"><label for="nNombre">Nombre de la tienda</label><input id="nNombre" required maxlength="80"></div>
+              <div class="field"><label for="nEmail">Email para avisos</label><input id="nEmail" type="email"></div>
+              <div class="field"><label for="nChat">Telegram · chat ID (opcional)</label><input id="nChat" inputmode="numeric"></div>
+            </div></fieldset>
+            <fieldset><legend>Automatizaciones</legend><div class="fgrid" id="nAutos"></div></fieldset>
+          </div>
+          <div>
+            <fieldset id="nMonitor"><legend>Monitor de precios</legend>
+              <div class="fgrid">
+                <div class="field"><label for="nMax">Plan</label><select id="nMax"><option value="3">Básico · 3 enlaces</option><option value="10" selected>Estándar · 10</option><option value="30">Premium · 30</option></select></div>
+                <div class="field"><label for="nFreq">Revisar cada</label><select id="nFreq"><option value="3">3 h</option><option value="6" selected>6 h</option><option value="12">12 h</option><option value="24">24 h</option></select></div>
+              </div>
+            </fieldset>
+            <fieldset><legend>Cuentas conectadas</legend><div id="nCon"></div>
+              <p class="hint">Márcalas cuando hayas dejado su conexión hecha en n8n. Sin ellas, el cliente solo puede usar datos de ejemplo, CSV o enlaces.</p></fieldset>
+            <div class="actions"><button class="btn primary full" id="newBtn">Crear y copiar su enlace</button></div>
+            <div id="newMsg"></div>
+          </div>
+        </div>
+      </form>
+      <div class="p-card">
+        <div class="card-head"><h2>Todos los clientes</h2><div class="inline" style="align-items:center"><span class="hint" id="count"></span><button type="button" class="btn primary sm" id="newOpen">Nuevo cliente</button></div></div>
+        <div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Cliente</th><th class="hide-s">Automatizaciones</th><th>Estado</th><th class="r"><span class="sr-only">Acciones</span></th></tr></thead>
           <tbody id="rows"></tbody>
         </table></div>
       </div>
-      <aside class="card">
-        <h2>Nuevo cliente</h2>
-        <form id="newForm" style="margin-top:12px">
-          <div class="field"><label for="nNombre">Nombre de la tienda</label><input id="nNombre" required maxlength="80"></div>
-          <div class="field"><label for="nEmail">Email para avisos</label><input id="nEmail" type="email"></div>
-          <div class="field"><label for="nChat">Telegram · chat ID (opcional)</label><input id="nChat" inputmode="numeric"></div>
-          <div class="row">
-            <div class="field"><label for="nMax">Enlaces máx.</label><select id="nMax"><option value="3">3 · Básico</option><option value="10" selected>10 · Estándar</option><option value="30">30 · Pro</option></select></div>
-            <div class="field"><label for="nFreq">Frecuencia</label><select id="nFreq"><option value="3">3 h</option><option value="6" selected>6 h</option><option value="12">12 h</option><option value="24">24 h</option></select></div>
-          </div>
-          <button class="primary" style="width:100%">Crear y obtener enlace</button>
-          <div id="newMsg"></div>
-        </form>
-      </aside>
     </div>
-  </section>
-</main>
+  </div>
+</div></main>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 <script>
+/*AUTOS*/
 (() => {
   const API = location.pathname.replace(/\/admin\/?$/, '/api');
   const $ = (id) => document.getElementById(id);
@@ -63,50 +90,111 @@
   let key = '';
   try { key = sessionStorage.getItem('denoro_admin') || ''; } catch (e) { key = ''; }
   let panelUrl = '';
+  let clientes = [];
+  let abierto = '';
   const panelLink = (t) => `${panelUrl && !panelUrl.startsWith('__') ? panelUrl : location.origin + location.pathname.replace(/\/admin\/?$/, '/panel')}?t=${t}`;
-  function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3200); }
-  const msg = (id, text, kind = 'error') => { $(id).innerHTML = text ? `<p class="msg ${kind}">${text}</p>` : ''; };
+  function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3400); }
+  const msg = (id, html, kind = 'err') => { $(id).innerHTML = html ? `<p class="msg ${kind}">${html}</p>` : ''; };
   async function api(accion, data = {}) {
     try { const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_key: key, accion, ...data }) }); return await r.json(); }
     catch (e) { return { ok: false, error: 'Sin conexión con n8n' }; }
   }
   const copy = async (text) => { try { await navigator.clipboard.writeText(text); toast('Enlace copiado'); } catch (e) { prompt('Copia el enlace:', text); } };
-  const ago = (iso) => iso ? new Date(iso).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'pendiente';
+  const ago = (iso) => {
+    if (!iso) return 'sin ejecutar';
+    const m = Math.round((Date.now() - new Date(iso)) / 60000);
+    if (m < 60) return `hace ${Math.max(m, 1)} min`; const h = Math.round(m / 60); if (h < 24) return `hace ${h} h`;
+    return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  };
+  const checks = (name, items, sel) => items.map(([v, t, sub]) => `<label class="check"><input type="checkbox" name="${name}" value="${esc(v)}"${sel.includes(v) ? ' checked' : ''}> <span>${esc(t)}${sub ? `<small>${esc(sub)}</small>` : ''}</span></label>`).join('');
+  const AUTOS_OPC = AUTOS.map((a) => [a.id, a.nombre, a.cat]);
+  const CON_OPC = Object.entries(CONEXIONES).map(([k, v]) => [k, v]);
+  const valores = (root, name) => [...root.querySelectorAll(`input[name="${name}"]:checked`)].map((i) => i.value);
+
+  function fila(c) {
+    const chips = c.servicios.map((s) => {
+      const cls = s.error ? 'bad' : s.ultima ? 'ok' : '';
+      const t = s.error ? `Error: ${s.error}` : s.ultima ? `Última: ${ago(s.ultima)}` : 'Sin ejecutar';
+      return `<li class="${cls}" title="${esc(t)}">${esc(AUTO[s.id]?.corto || s.id)}</li>`;
+    }).join('');
+    const errores = c.servicios.filter((s) => s.error).length + (c.errores > 0 ? 1 : 0);
+    return `<tr class="${abierto === c.token ? 'open' : ''}">
+      <td><div class="name">${esc(c.nombre)}</div><div class="sub">${esc(c.email || 'sin email')}${c.telegram_chat_id ? ' · Telegram' : ''}</div>
+        ${c.conexiones?.length ? `<div class="sub">Conectado: ${esc(c.conexiones.map((x) => CONEXIONES[x]).join(', '))}</div>` : ''}</td>
+      <td class="hide-s"><ul class="chips sm">${chips || '<li class="off">ninguna</li>'}</ul></td>
+      <td>${!c.activo ? '<span class="badge">Pausado</span>' : errores ? `<span class="badge bad">${errores} con error</span>` : '<span class="badge ok">Activo</span>'}</td>
+      <td class="r" style="white-space:nowrap">
+        <button class="btn sm" data-copy="${esc(c.token)}">Copiar enlace</button>
+        <a class="btn sm ghost" href="${esc(panelLink(c.token))}" target="_blank" rel="noopener">Abrir</a>
+        <button class="btn sm ghost" data-edit="${esc(c.token)}" aria-expanded="${abierto === c.token}">${abierto === c.token ? 'Cerrar' : 'Editar'}</button></td></tr>
+      ${abierto === c.token ? editor(c) : ''}`;
+  }
+  function editor(c) {
+    const ids = c.servicios.map((s) => s.id);
+    return `<tr class="edit"><td colspan="4"><form class="p-card" data-form="${esc(c.token)}" novalidate style="margin-top:var(--s2)">
+      <div class="fgrid">
+        <div class="field"><label>Nombre</label><input name="nombre" value="${esc(c.nombre)}" maxlength="80"></div>
+        <div class="field"><label>Email para avisos</label><input name="email" type="email" value="${esc(c.email || '')}"></div>
+      </div>
+      <fieldset><legend>Automatizaciones</legend><div class="fgrid">${checks('auto', AUTOS_OPC, ids)}</div></fieldset>
+      <fieldset><legend>Monitor · enlaces máx.</legend><div class="fgrid"><div class="field"><select name="max">${[3, 10, 30, 50, 100].map((n) => `<option value="${n}"${c.max_vigilancias === n ? ' selected' : ''}>${n} enlaces</option>`).join('')}${[3, 10, 30, 50, 100].includes(c.max_vigilancias) ? '' : `<option value="${c.max_vigilancias}" selected>${c.max_vigilancias} enlaces</option>`}</select></div></div></fieldset>
+      <fieldset><legend>Cuentas conectadas</legend><div class="fgrid">${checks('con', CON_OPC, c.conexiones || [])}</div></fieldset>
+      <div class="actions"><button class="btn primary">Guardar</button><button type="button" class="btn ${c.activo ? 'danger' : ''}" data-toggle="${esc(c.token)}" data-active="${c.activo}">${c.activo ? 'Pausar cliente' : 'Reactivar cliente'}</button></div>
+      <div data-msg></div></form></td></tr>`;
+  }
 
   async function load() {
     const r = await api('admin_listar');
     if (!r.ok) { $('login').hidden = false; $('dash').hidden = true; $('logout').hidden = true; if (key) msg('loginMsg', esc(r.error)); return; }
     try { sessionStorage.setItem('denoro_admin', key); } catch (e) {}
-    panelUrl = r.panel_url;
+    panelUrl = r.panel_url; clientes = r.clientes;
     $('login').hidden = true; $('dash').hidden = false; $('logout').hidden = false;
-    const cs = r.clientes;
-    $('sClients').textContent = cs.filter((c) => c.activo).length;
-    $('sLinks').textContent = cs.reduce((a, c) => a + c.vigilancias, 0);
-    $('sErrors').textContent = cs.reduce((a, c) => a + c.errores, 0);
-    $('rows').innerHTML = cs.map((c) => `<tr>
-      <td><div class="name">${esc(c.nombre)}</div><div class="url">${esc(c.email || 'sin email')}${c.telegram_chat_id ? ' · Telegram' : ''}</div></td>
-      <td class="r num">${c.vigilancias}/${c.max_vigilancias}${c.errores ? `<div><span class="badge bad">${c.errores} con error</span></div>` : ''}</td>
-      <td class="hide-s"><span class="hint">${ago(c.ultima)} · cada ${c.frecuencia_horas} h</span></td>
-      <td>${c.activo ? '<span class="badge ok">Activo</span>' : '<span class="badge">Pausado</span>'}</td>
-      <td class="r" style="white-space:nowrap"><button class="icon-btn" data-copy="${esc(c.token)}">Copiar enlace</button>
-        <a class="btn icon-btn" href="${esc(panelLink(c.token))}" target="_blank" rel="noopener">Abrir</a>
-        <button class="ghost icon-btn" data-toggle="${esc(c.token)}" data-active="${c.activo}">${c.activo ? 'Pausar' : 'Activar'}</button></td></tr>`).join('')
-      || '<tr><td colspan="5" class="empty">Aún no hay clientes. Crea el primero a la derecha.</td></tr>';
+    $('sClients').textContent = clientes.filter((c) => c.activo).length;
+    $('sAutos').textContent = clientes.filter((c) => c.activo).reduce((n, c) => n + c.servicios.length, 0);
+    $('sErrors').textContent = clientes.reduce((n, c) => n + c.servicios.filter((s) => s.error).length + (c.errores > 0 ? 1 : 0), 0);
+    $('count').textContent = `${clientes.length} en total`;
+    $('rows').innerHTML = clientes.map(fila).join('') || '<tr><td colspan="4" class="empty">Aún no hay clientes. Pulsa «Nuevo cliente» para crear el primero.</td></tr>';
+    if (!clientes.length) $('newForm').hidden = false;
   }
+  $('nAutos').innerHTML = checks('nauto', AUTOS_OPC, ['monitor']);
+  $('nCon').innerHTML = checks('ncon', CON_OPC, []);
+  const syncMon = () => { $('nMonitor').hidden = !valores($('newForm'), 'nauto').includes('monitor'); };
+  $('nAutos').addEventListener('change', syncMon);
+
+  $('newOpen').addEventListener('click', () => { $('newForm').hidden = false; $('nNombre').focus(); });
+  $('newClose').addEventListener('click', () => { $('newForm').hidden = true; });
   $('loginForm').addEventListener('submit', (e) => { e.preventDefault(); key = $('key').value; load(); });
-  $('logout').addEventListener('click', () => { key = ''; try { sessionStorage.removeItem('denoro_admin'); } catch (e) {} load(); });
+  $('logout').addEventListener('click', () => { key = ''; try { sessionStorage.removeItem('denoro_admin'); } catch (e) {} $('key').value = ''; msg('loginMsg', ''); load(); });
   $('rows').addEventListener('click', async (e) => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.copy) return copy(panelLink(b.dataset.copy));
-    if (b.dataset.toggle) { const r = await api('admin_actualizar', { token: b.dataset.toggle, activo: b.dataset.active !== 'true' }); toast(r.ok ? 'Actualizado' : r.error); load(); }
+    if (b.dataset.edit) { abierto = abierto === b.dataset.edit ? '' : b.dataset.edit; $('rows').innerHTML = clientes.map(fila).join(''); return; }
+    if (b.dataset.toggle) {
+      const r = await api('admin_actualizar', { token: b.dataset.toggle, activo: b.dataset.active !== 'true' });
+      toast(r.ok ? (b.dataset.active === 'true' ? 'Cliente pausado' : 'Cliente reactivado') : r.error); load();
+    }
+  });
+  $('rows').addEventListener('submit', async (e) => {
+    e.preventDefault(); const f = e.target.closest('form[data-form]'); if (!f) return;
+    const box = f.querySelector('[data-msg]');
+    const r = await api('admin_actualizar', { token: f.dataset.form, nombre: f.nombre.value, email: f.email.value,
+      servicios: valores(f, 'auto'), conexiones: valores(f, 'con'), max_vigilancias: +f.max.value });
+    if (!r.ok) { box.innerHTML = `<p class="msg err">${esc(r.error)}</p>`; return; }
+    toast('Cliente actualizado'); abierto = ''; load();
   });
   $('newForm').addEventListener('submit', async (e) => {
     e.preventDefault(); msg('newMsg', '');
-    const r = await api('admin_crear', { nombre: $('nNombre').value, email: $('nEmail').value, telegram_chat_id: $('nChat').value, max_vigilancias: +$('nMax').value, frecuencia_horas: +$('nFreq').value });
+    const servicios = valores($('newForm'), 'nauto');
+    if (!$('nNombre').value.trim()) return msg('newMsg', 'Pon el nombre de la tienda');
+    if (!servicios.length) return msg('newMsg', 'Elige al menos una automatización');
+    const btn = $('newBtn'); btn.disabled = true;
+    const r = await api('admin_crear', { nombre: $('nNombre').value, email: $('nEmail').value, telegram_chat_id: $('nChat').value,
+      servicios, conexiones: valores($('newForm'), 'ncon'), max_vigilancias: +$('nMax').value, frecuencia_horas: +$('nFreq').value });
+    btn.disabled = false;
     if (!r.ok) return msg('newMsg', esc(r.error));
     const link = panelLink(r.token);
-    msg('newMsg', `Cliente creado. Envíale este enlace:<br><a href="${esc(link)}" target="_blank" rel="noopener" style="word-break:break-all">${esc(link)}</a>`, 'okay');
-    copy(link); e.target.reset(); load();
+    msg('newMsg', `Cliente creado. Su enlace (ya copiado):<br><a href="${esc(link)}" target="_blank" rel="noopener" style="word-break:break-all">${esc(link)}</a>`, 'ok');
+    copy(link); e.target.reset(); setTimeout(() => { $('newForm').hidden = true; }, 6000); $('nAutos').innerHTML = checks('nauto', AUTOS_OPC, ['monitor']); $('nCon').innerHTML = checks('ncon', CON_OPC, []); syncMon(); load();
   });
   if (key) load();
 })();

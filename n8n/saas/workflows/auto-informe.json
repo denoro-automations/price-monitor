@@ -1,0 +1,740 @@
+{
+  "name": "Denoro SaaS — Informe semanal",
+  "nodes": [
+    {
+      "id": "37515c99-de3d-5095-82ce-8d8837f06061",
+      "name": "Nota: cómo usarlo",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -300
+      ],
+      "parameters": {
+        "content": "## Informe semanal · versión para el panel\nLa lanzan el **panel de Denoro** (botón *Ejecutar ahora*) y el **Planificador de automatizaciones**.\nLos ajustes de cada cliente llegan en la entrada y se mezclan con los valores por defecto del nodo **Configuración**: aquí no hay que editar nada.\n\nSe genera con `n8n/saas/build.py` a partir del workflow original: no lo edites a mano.",
+        "width": 460,
+        "height": 220,
+        "color": 5
+      }
+    },
+    {
+      "id": "4a19d239-7f55-55a4-a4a8-7152e3fc0c3e",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// ============ CONFIGURACIÓN DEL CLIENTE (edita solo este bloque) ============\nconst CONFIG_BASE = {\n  tienda: 'Tienda Demo',\n  fuente: 'demo',                 // 'demo', 'shopify' o 'woocommerce'\n  moneda: 'EUR',\n  zona_horaria: 'Europe/Madrid',\n\n  stock_minimo: 5,                // avisa si quedan estas unidades o menos...\n  semanas_cobertura_min: 2,       // ...o si al ritmo actual se agota en menos de 2 semanas\n  objetivo_mensual: 32000,        // ventas objetivo del mes (0 para ocultarlo)\n\n  email_to: 'cliente@ejemplo.com',\n  email_from: 'informes@tu-dominio.com',  // la cuenta SMTP que envía\n  telegram_chat_id: 'TU_CHAT_ID',\n\n  // Servicio que convierte el informe en PDF (Gotenberg, ver README)\n  gotenberg_url: 'http://host.docker.internal:3000',\n};\n// ============================================================================\n\n// ---- Panel único de Denoro: los ajustes del cliente llegan en la entrada ----\nconst __ENTRADA = $input.first().json || {};\nconst __limpio = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, x]) => x !== '' && x !== null && x !== undefined));\nconst __mezclar = (b, o) => {\n  const r = { ...b };\n  for (const [k, v] of Object.entries(o || {})) {\n    if (v && typeof v === 'object' && !Array.isArray(v) && b[k] && typeof b[k] === 'object' && !Array.isArray(b[k])) r[k] = { ...b[k], ...__limpio(v) };\n    else if (v !== undefined && v !== null) r[k] = v;\n  }\n  return r;\n};\nconst CONFIG = { ...__mezclar(CONFIG_BASE, __ENTRADA.config), __token: String(__ENTRADA.token || ''), __auto: String(__ENTRADA.auto || ''), __clave: String(__ENTRADA.clave || '') };\nif (!CONFIG.__token || !CONFIG.__clave) throw new Error('Esta versión se lanza desde el panel de Denoro (falta el cliente)');\nif (!['demo', 'shopify', 'woocommerce'].includes(CONFIG.fuente)) {\n  throw new Error(`fuente \"${CONFIG.fuente}\" no válida: usa demo, shopify o woocommerce`);\n}\n// Destinos: vacío = canal desactivado; valores de ejemplo = error claro\nconst PLACEHOLDER = /ejemplo\\.com|tu-dominio|TU_CHAT_ID/i;\nfor (const k of ['email_to', 'email_from', 'telegram_chat_id']) {\n  if (PLACEHOLDER.test(String(CONFIG[k] || ''))) {\n    throw new Error(`Configura \"${k}\" en el nodo Configuración (ahora tiene un valor de ejemplo). Déjalo vacío ('') para desactivar ese canal.`);\n  }\n}\nif (CONFIG.telegram_chat_id && !/^-?\\d+$|^@\\w+$/.test(String(CONFIG.telegram_chat_id))) {\n  throw new Error('telegram_chat_id debe ser un número (p. ej. 123456789) o @canal');\n}\nif (!CONFIG.email_to && !CONFIG.telegram_chat_id) throw new Error('Configura al menos un canal: email_to o telegram_chat_id');\nif (CONFIG.email_to && !CONFIG.email_from) throw new Error('Falta email_from (la cuenta SMTP que envía)');\n\n// ---- Fechas en la zona horaria de la tienda (el servidor puede estar en UTC) ----\nconst TZ = CONFIG.zona_horaria || 'Europe/Madrid';\nconst partsOf = (ms, opts) => Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hourCycle: 'h23', ...opts })\n  .formatToParts(new Date(ms)).map((p) => [p.type, p.value]));\nconst offsetAt = (ms) => {\n  const p = partsOf(ms, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });\n  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - Math.floor(ms / 1000) * 1000;\n};\n// medianoche (en TZ) del día y/m/d -> instante UTC\nconst midnight = (y, m, d) => {\n  const naive = Date.UTC(y, m - 1, d);\n  let t = naive - offsetAt(naive);\n  t = naive - offsetAt(t);\n  return t;\n};\nconst addDays = (y, m, d, k) => { const x = new Date(Date.UTC(y, m - 1, d + k)); return [x.getUTCFullYear(), x.getUTCMonth() + 1, x.getUTCDate()]; };\nconst now = partsOf(Date.now(), { year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'short' });\nconst dow = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(now.weekday);   // 0 = lunes\nconst thisMonday = addDays(+now.year, +now.month, +now.day, -dow);\nconst weekStartD = addDays(...thisMonday, -7);\nconst prevStartD = addDays(...thisMonday, -14);\nconst dias = Array.from({ length: 8 }, (_, k) => new Date(midnight(...addDays(...weekStartD, k))).toISOString());\nconst lastDayD = addDays(...thisMonday, -1);                           // domingo de la semana informada\nconst mesIni = midnight(lastDayD[0], lastDayD[1], 1);\nconst mesFin = midnight(...(lastDayD[1] === 12 ? [lastDayD[0] + 1, 1, 1] : [lastDayD[0], lastDayD[1] + 1, 1]));\nconst weekStart = midnight(...weekStartD), prevStart = midnight(...prevStartD);\n\nreturn [{ json: { ...CONFIG, zona_horaria: TZ,\n  enviar_email: Boolean(CONFIG.email_to), enviar_telegram: Boolean(CONFIG.telegram_chat_id),\n  periodo: {\n    semana_inicio: new Date(weekStart).toISOString(), semana_fin: dias[7], dias,\n    anterior_inicio: new Date(prevStart).toISOString(),\n    mes_inicio: new Date(mesIni).toISOString(), mes_fin: new Date(mesFin).toISOString(),\n    pedir_desde: new Date(Math.min(prevStart, mesIni)).toISOString(),\n  },\n} }];\n"
+      }
+    },
+    {
+      "id": "38f3e411-f086-5f54-a83b-d59cb3f8c18c",
+      "name": "¿De dónde leo los pedidos?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        440,
+        100
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "demo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "demo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "shopify",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "shopify"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "woocommerce",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "woocommerce"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "87160fef-df4a-5922-8611-945abe00ecec",
+      "name": "Pedidos de ejemplo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        -120
+      ],
+      "parameters": {
+        "jsCode": "// Datos de ejemplo realistas: 10 semanas de pedidos de una tienda de ropa y accesorios.\n// Con un cliente real esta rama se sustituye por Shopify o WooCommerce (ver Configuración).\nconst cfg = $('Configuración').first().json;\nconst DAY = 86400000;\nconst products = [\n  { sku: 'CAM-01', name: 'Camiseta básica algodón orgánico', price: 19.9, stock: 140, weight: 9 },\n  { sku: 'SUD-02', name: 'Sudadera con capucha', price: 44.9, stock: 160, weight: 5 },\n  { sku: 'GOR-03', name: 'Gorra bordada', price: 17.5, stock: 60, weight: 4 },\n  { sku: 'MOC-04', name: 'Mochila urbana impermeable', price: 59.0, stock: 3, weight: 2 },\n  { sku: 'TAZ-05', name: 'Taza de cerámica 350 ml', price: 12.9, stock: 85, weight: 4 },\n  { sku: 'CAL-06', name: 'Pack 3 calcetines', price: 14.9, stock: 150, weight: 6 },\n  { sku: 'BOL-07', name: 'Tote bag lona', price: 16.0, stock: 44, weight: 3 },\n  { sku: 'CHA-08', name: 'Chaqueta cortavientos', price: 79.0, stock: 14, weight: 1.5 },\n  { sku: 'BOT-09', name: 'Botella térmica 500 ml', price: 24.5, stock: 0, weight: 2 },\n  { sku: 'PAN-10', name: 'Pañuelo estampado', price: 11.0, stock: 70, weight: 1.5 },\n];\nconst channels = [['Orgánico', 0.38], ['Instagram', 0.27], ['Google Ads', 0.2], ['Email', 0.15]];\nlet seed = 20260917;\nconst rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };\nconst pick = (pairs) => { let r = rnd() * pairs.reduce((s, p) => s + p[1], 0); for (const p of pairs) { if ((r -= p[1]) <= 0) return p[0]; } return pairs[0][0]; };\nconst totalW = products.reduce((s, p) => s + p.weight, 0);\nconst pickProduct = () => pick(products.map((p) => [p, p.weight / totalW]));\n\nconst end = new Date(cfg.periodo.semana_fin).getTime();\nconst orders = [];\nconst customers = [];\nlet n = 1000;\nfor (let d = 70; d >= 1; d--) {\n  const day = new Date(end - d * DAY);\n  const weekday = (day.getDay() + 6) % 7;\n  const growth = 1 + (70 - d) * 0.004;                       // la tienda crece poco a poco\n  const base = [18, 17, 18, 20, 24, 27, 22][weekday];          // más ventas en fin de semana\n  const count = Math.round(base * growth * (0.8 + rnd() * 0.4));\n  for (let i = 0; i < count; i++) {\n    const returning = customers.length > 20 && rnd() < 0.34;\n    let customer;\n    if (returning) customer = customers[Math.floor(rnd() * customers.length)];\n    else { customer = `cliente-${customers.length + 1}`; customers.push(customer); }\n    const lines = [];\n    const nLines = rnd() < 0.7 ? 1 : rnd() < 0.8 ? 2 : 3;\n    for (let l = 0; l < nLines; l++) {\n      const p = pickProduct();\n      const qty = rnd() < 0.85 ? 1 : 2;\n      const existing = lines.find((x) => x.sku === p.sku);\n      if (existing) existing.qty += qty; else lines.push({ sku: p.sku, name: p.name, qty, price: p.price });\n    }\n    const subtotal = lines.reduce((s, x) => s + x.qty * x.price, 0);\n    const shipping = subtotal >= 50 ? 0 : 4.95;\n    const r = rnd();\n    orders.push({\n      id: `#${++n}`,\n      date: new Date(day.getTime() + Math.floor(rnd() * DAY)).toISOString(),\n      status: r < 0.035 ? 'cancelled' : r < 0.085 ? 'refunded' : 'paid',\n      total: Math.round((subtotal + shipping) * 100) / 100,\n      customer, returning,\n      channel: pick(channels),\n      lines,\n    });\n  }\n}\nreturn [{ json: {\n  orders,\n  products: products.map(({ sku, name, price, stock }) => ({ sku, name, price, stock })),\n  fuente: 'demo',\n} }];\n"
+      }
+    },
+    {
+      "id": "9aebc554-787f-5138-afbe-3e4667419739",
+      "name": "Pedidos Shopify",
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [
+        700,
+        100
+      ],
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "order",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {
+          "status": "any",
+          "createdAtMin": "={{ $json.periodo.pedir_desde }}"
+        }
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "6658496f-b5ea-5fda-a22e-1f3ad23ed9ce",
+      "name": "Productos Shopify",
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [
+        920,
+        100
+      ],
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "product",
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {}
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "ca02975e-36be-529a-a5d7-9894016a2992",
+      "name": "Normalizar Shopify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Convierte pedidos y productos de Shopify al formato común del informe\nconst rawOrders = $('Pedidos Shopify').all().map((i) => i.json).filter((o) => o && o.id);\nconst rawProducts = $input.all().map((i) => i.json).filter((p) => p && p.id);\nconst counts = {};\nrawOrders.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));\nconst orders = rawOrders.map((o) => {\n  const email = o.email || o.customer?.email || String(o.customer?.id || o.id);\n  const refunded = o.financial_status === 'refunded';\n  const status = o.cancelled_at ? 'cancelled' : refunded ? 'refunded' : ['paid', 'partially_paid', 'authorized'].includes(o.financial_status) ? 'paid' : 'pending';\n  counts[email] = (counts[email] || 0) + 1;\n  const returning = (o.customer?.orders_count ?? 1) > 1 || counts[email] > 1;\n  return {\n    id: o.name || String(o.id),\n    date: o.created_at || o.processed_at,\n    status,\n    total: Number(o.current_total_price ?? o.total_price ?? 0),\n    customer: email,\n    returning,\n    channel: o.source_name === 'web' ? (o.referring_site ? 'Referido' : 'Web') : (o.source_name || 'Otro'),\n    lines: (o.line_items || []).map((l) => ({ sku: l.sku || String(l.product_id), name: l.title, qty: Number(l.quantity || 0), price: Number(l.price || 0) })),\n  };\n});\nconst products = [];\nfor (const p of rawProducts) {\n  const variants = p.variants || [];\n  const tracked = variants.filter((v) => v.inventory_management);\n  if (!tracked.length) continue; // sin control de stock: no se puede avisar\n  const skus = variants.map((v) => v.sku).filter(Boolean);\n  products.push({\n    sku: skus[0] || String(p.id),\n    skus,\n    name: p.title,\n    price: Number(variants[0]?.price || 0),\n    stock: tracked.reduce((s, v) => s + Number(v.inventory_quantity || 0), 0),\n  });\n}\nreturn [{ json: { orders, products, fuente: 'shopify' } }];\n"
+      }
+    },
+    {
+      "id": "b0d0e29c-9aa2-5403-b218-afb7e44c0b39",
+      "name": "Pedidos WooCommerce",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [
+        700,
+        320
+      ],
+      "parameters": {
+        "resource": "order",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {
+          "after": "={{ $json.periodo.pedir_desde }}"
+        }
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "dd52cc39-fdb7-54dc-9cf6-ae2276190d7a",
+      "name": "Productos WooCommerce",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [
+        920,
+        320
+      ],
+      "parameters": {
+        "resource": "product",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {}
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "b66567ee-29c0-55d9-b31f-8693abe96037",
+      "name": "Normalizar WooCommerce",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        320
+      ],
+      "parameters": {
+        "jsCode": "// Convierte pedidos y productos de WooCommerce al formato común del informe\nconst rawOrders = $('Pedidos WooCommerce').all().map((i) => i.json).filter((o) => o && o.id);\nconst rawProducts = $input.all().map((i) => i.json).filter((p) => p && p.id);\nconst counts = {};\nconst sorted = rawOrders.slice().sort((a, b) => String(a.date_created).localeCompare(String(b.date_created)));\nconst orders = sorted.map((o) => {\n  const who = o.billing?.email || String(o.customer_id || o.id);\n  counts[who] = (counts[who] || 0) + 1;\n  const status = ['completed', 'processing'].includes(o.status) ? 'paid'\n    : o.status === 'refunded' ? 'refunded' : ['cancelled', 'failed'].includes(o.status) ? 'cancelled' : 'pending';\n  const meta = (o.meta_data || []).find((m) => m.key === '_wc_order_attribution_source_type' || m.key === '_wc_order_attribution_utm_source');\n  return {\n    id: `#${o.number || o.id}`,\n    date: o.date_created_gmt ? o.date_created_gmt + 'Z' : o.date_created,\n    status,\n    total: Number(o.total || 0),\n    customer: who,\n    returning: counts[who] > 1,\n    channel: meta ? String(meta.value) : (o.created_via === 'checkout' ? 'Web' : o.created_via || 'Otro'),\n    lines: (o.line_items || []).map((l) => ({ sku: l.sku || String(l.product_id), name: l.name, qty: Number(l.quantity || 0), price: Number(l.price || 0) })),\n  };\n});\nconst products = rawProducts\n  .filter((p) => p.manage_stock)\n  .map((p) => ({ sku: p.sku || String(p.id), name: p.name, price: Number(p.price || 0), stock: Number(p.stock_quantity || 0) }));\nreturn [{ json: { orders, products, fuente: 'woocommerce' } }];\n"
+      }
+    },
+    {
+      "id": "bef47232-022d-56b1-9a9f-d22dcf6a6320",
+      "name": "Calcular KPIs e informe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Calcula los KPIs de la semana frente a la anterior y genera:\n//  - el email en HTML, - el HTML para el PDF (binario index.html), - el resumen para Telegram\nconst cfg = $('Configuración').first().json;\nconst { orders = [], products = [], fuente } = $input.first().json;\nconst P = cfg.periodo;\nconst DAY = 86400000;\nconst t = (s) => new Date(s).getTime();\nconst wStart = t(P.semana_inicio), wEnd = t(P.semana_fin), pStart = t(P.anterior_inicio), mStart = t(P.mes_inicio);\nconst cur = cfg.moneda || 'EUR';\n\n// ---------- formato ----------\nconst nf = (v, d = 0) => {\n  const [int, dec] = Math.abs(Number(v || 0)).toFixed(d).split('.');\n  return (Number(v) < 0 && Number(int + (dec || '')) !== 0 ? '-' : '') + int.replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.') + (dec ? ',' + dec : '');\n};\nconst money = (v, d = 2) => nf(v, d) + ({ EUR: ' €', USD: ' $', GBP: ' £' }[cur] ?? ' ' + cur);\nconst pct = (v) => (v === null ? '—' : (v > 0 ? '+' : '') + nf(v, 1) + ' %');\nconst change = (a, b) => (b ? Math.round(((a - b) / b) * 1000) / 10 : null);\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst fDate = (ms, o = { day: 'numeric', month: 'short' }) => new Date(ms).toLocaleDateString('es-ES', { timeZone: cfg.zona_horaria, ...o });\n\n// ---------- KPIs ----------\nconst inRange = (o, a, b) => { const x = t(o.date); return x >= a && x < b; };\nfunction summarize(list) {\n  const paid = list.filter((o) => o.status === 'paid');\n  const refunded = list.filter((o) => o.status === 'refunded');\n  const revenue = paid.reduce((s, o) => s + o.total, 0);\n  const units = paid.reduce((s, o) => s + o.lines.reduce((u, l) => u + l.qty, 0), 0);\n  const valid = paid.length + refunded.length;\n  return {\n    ventas: Math.round(revenue * 100) / 100,\n    pedidos: paid.length,\n    ticket_medio: paid.length ? Math.round((revenue / paid.length) * 100) / 100 : 0,\n    unidades: units,\n    devoluciones: refunded.length,\n    importe_devuelto: Math.round(refunded.reduce((s, o) => s + o.total, 0) * 100) / 100,\n    tasa_devolucion: valid ? Math.round((refunded.length / valid) * 1000) / 10 : 0,\n    cancelados: list.filter((o) => o.status === 'cancelled').length,\n    clientes_nuevos_pct: paid.length ? Math.round((paid.filter((o) => !o.returning).length / paid.length) * 1000) / 10 : 0,\n  };\n}\nconst week = orders.filter((o) => inRange(o, wStart, wEnd));\nconst prev = orders.filter((o) => inRange(o, pStart, wStart));\nconst W = summarize(week), Pv = summarize(prev);\nconst kpis = Object.fromEntries(Object.keys(W).map((k) => [k, { actual: W[k], anterior: Pv[k], cambio_pct: change(W[k], Pv[k]) }]));\n\n// ventas por día\nconst days = [];\nfor (let d = 0; d < 7; d++) {\n  const a = t(P.dias[d]), b = t(P.dias[d + 1]);\n  const list = week.filter((o) => inRange(o, a, b) && o.status === 'paid');\n  days.push({ dia: fDate(a, { weekday: 'short', day: 'numeric' }), ventas: list.reduce((s, o) => s + o.total, 0), pedidos: list.length });\n}\nconst bestDay = days.reduce((m, d) => (d.ventas > m.ventas ? d : m), days[0]);\n\n// productos\nfunction byProduct(list) {\n  const m = {};\n  for (const o of list.filter((x) => x.status === 'paid')) {\n    for (const l of o.lines) {\n      m[l.sku] = m[l.sku] || { sku: l.sku, nombre: l.name, unidades: 0, ventas: 0 };\n      m[l.sku].unidades += l.qty;\n      m[l.sku].ventas += l.qty * l.price;\n    }\n  }\n  return m;\n}\nconst pw = byProduct(week), pp = byProduct(prev);\nconst top = Object.values(pw).sort((a, b) => b.ventas - a.ventas).slice(0, 5)\n  .map((x) => ({ ...x, ventas: Math.round(x.ventas * 100) / 100, cambio_pct: change(x.ventas, pp[x.sku]?.ventas || 0) }));\n\n// canales\nconst chan = {};\nfor (const o of week.filter((x) => x.status === 'paid')) chan[o.channel || 'Otro'] = (chan[o.channel || 'Otro'] || 0) + o.total;\nconst canales = Object.entries(chan).sort((a, b) => b[1] - a[1]).map(([canal, v]) => ({ canal, ventas: Math.round(v * 100) / 100, peso_pct: W.ventas ? Math.round((v / W.ventas) * 1000) / 10 : 0 }));\n\n// stock: unidades vendidas por semana (media de las 2 últimas) -> semanas de cobertura\nconst stock = [];\nfor (const p of products) {\n  const skus = p.skus && p.skus.length ? p.skus : [p.sku];\n  const sold = skus.reduce((s, k) => s + (pw[k]?.unidades || 0) + (pp[k]?.unidades || 0), 0) / 2;\n  const cover = sold > 0 ? Math.round((p.stock / sold) * 10) / 10 : null;\n  const low = p.stock <= cfg.stock_minimo || (cover !== null && cover < cfg.semanas_cobertura_min);\n  if (low) stock.push({ sku: p.sku, nombre: p.name, stock: p.stock, venta_semanal: Math.round(sold * 10) / 10, semanas_cobertura: cover, agotado: p.stock <= 0 });\n}\nstock.sort((a, b) => a.stock - b.stock);\n\n// objetivo del mes\nlet objetivo = null;\nif (cfg.objetivo_mensual > 0) {\n  const mEnd = t(P.mes_fin);\n  const upTo = Math.min(wEnd, mEnd);\n  const mtd = orders.filter((o) => inRange(o, mStart, upTo) && o.status === 'paid').reduce((s, o) => s + o.total, 0);\n  const elapsed = Math.max(1, Math.round((upTo - mStart) / DAY));\n  const total = Math.round((mEnd - mStart) / DAY);\n  const proj = (mtd / elapsed) * total;\n  objetivo = { mes: fDate(mStart, { month: 'long', year: 'numeric' }), acumulado: Math.round(mtd * 100) / 100, objetivo: cfg.objetivo_mensual,\n               progreso_pct: Math.round((mtd / cfg.objetivo_mensual) * 1000) / 10, dias: `${elapsed}/${total}`,\n               proyeccion: Math.round(proj * 100) / 100, proyeccion_pct: Math.round((proj / cfg.objetivo_mensual) * 1000) / 10 };\n}\n\n// conclusiones automáticas\nconst insights = [];\nif (kpis.ventas.cambio_pct !== null) {\n  insights.push(`Las ventas ${kpis.ventas.cambio_pct >= 0 ? 'suben' : 'bajan'} un ${nf(Math.abs(kpis.ventas.cambio_pct), 1)} % frente a la semana anterior` +\n    (Math.abs(kpis.pedidos.cambio_pct || 0) > Math.abs(kpis.ticket_medio.cambio_pct || 0) ? ', sobre todo por el número de pedidos.' : ', sobre todo por el ticket medio.'));\n}\nif (W.pedidos) insights.push(`El mejor día fue el ${bestDay.dia} con ${money(bestDay.ventas)}.`);\nif (top[0]) insights.push(`«${top[0].nombre}» es el producto estrella: ${nf(top[0].unidades)} uds y ${money(top[0].ventas)}.`);\nconst agotados = stock.filter((s) => s.agotado).length;\nif (stock.length) insights.push(`${stock.length} producto${stock.length > 1 ? 's' : ''} con stock bajo${agotados ? ` (${agotados} agotado${agotados > 1 ? 's' : ''})` : ''}: conviene reponer.`);\nif (W.tasa_devolucion > 8) insights.push(`Ojo con las devoluciones: ${nf(W.tasa_devolucion, 1)} % de los pedidos.`);\nif (objetivo) insights.push(`Al ritmo actual cerrarías ${objetivo.mes} en ${money(objetivo.proyeccion, 0)} (${nf(objetivo.proyeccion_pct, 0)} % del objetivo).`);\nif (!orders.length) insights.push('No se han encontrado pedidos en el periodo. Revisa la conexión con la tienda.');\n\n// ---------- HTML (compatible con email y con PDF) ----------\nconst C = { ink: '#191713', muted: '#6e6a61', line: '#e7e4dc', soft: '#f4f3ef', up: '#2c5f3c', down: '#8f2f24', accent: '#235b54' };\nconst arrow = (v, inverse = false) => {\n  if (v === null) return `<span style=\"color:${C.muted}\">nuevo</span>`;\n  const good = inverse ? v <= 0 : v >= 0;\n  return `<span style=\"color:${good ? C.up : C.down}\">${v >= 0 ? '▲' : '▼'} ${pct(v).replace('+', '')}</span>`;\n};\nconst tile = (label, value, ch, inverse) => `<td width=\"25%\" style=\"padding:6px\"><div style=\"background:${C.soft};border-radius:10px;padding:14px\">\n<div style=\"font-size:12px;color:${C.muted}\">${label}</div><div style=\"font-size:22px;font-weight:700;color:${C.ink};margin:4px 0\">${value}</div>\n<div style=\"font-size:12px\">${arrow(ch, inverse)} <span style=\"color:${C.muted}\">vs semana anterior</span></div></div></td>`;\nconst maxDay = Math.max(1, ...days.map((d) => d.ventas));\nconst dayRows = days.map((d) => `<tr><td style=\"padding:4px 8px 4px 0;font-size:13px;color:${C.muted};white-space:nowrap;width:70px\">${esc(d.dia)}</td>\n<td style=\"padding:4px 0\"><div style=\"background:${d === bestDay ? C.accent : '#9fbdb7'};height:16px;border-radius:4px;width:${Math.max(2, Math.round((d.ventas / maxDay) * 100))}%\"></div></td>\n<td style=\"padding:4px 0 4px 8px;font-size:13px;text-align:right;white-space:nowrap;width:110px\">${money(d.ventas, 0)} · ${d.pedidos}</td></tr>`).join('');\nconst th = (s, right) => `<th style=\"padding:8px;text-align:${right ? 'right' : 'left'};font-size:12px;color:${C.muted};border-bottom:1px solid ${C.line}\">${s}</th>`;\nconst tdc = (s, right, extra = '') => `<td style=\"padding:8px;text-align:${right ? 'right' : 'left'};font-size:13px;border-bottom:1px solid ${C.line};${extra}\">${s}</td>`;\nconst topRows = top.map((x, i) => `<tr>${tdc(`${i + 1}. ${esc(x.nombre)}`)}${tdc(nf(x.unidades), true)}${tdc(money(x.ventas), true)}${tdc(arrow(x.cambio_pct), true)}</tr>`).join('')\n  || `<tr>${tdc('Sin ventas esta semana')}</tr>`;\nconst stockRows = stock.slice(0, 10).map((s) => `<tr>${tdc(esc(s.nombre))}${tdc(s.agotado ? `<b style=\"color:${C.down}\">Agotado</b>` : nf(s.stock), true)}${tdc(nf(s.venta_semanal, 1), true)}${tdc(s.semanas_cobertura === null ? '—' : nf(s.semanas_cobertura, 1) + ' sem', true, s.semanas_cobertura !== null && s.semanas_cobertura < 1 ? `color:${C.down};font-weight:700` : '')}</tr>`).join('');\nconst chanRows = canales.map((c) => `<tr>${tdc(esc(c.canal))}${tdc(money(c.ventas), true)}${tdc(nf(c.peso_pct, 1) + ' %', true)}</tr>`).join('');\nconst h3 = (s) => `<h3 style=\"margin:28px 0 10px;font-size:16px;color:${C.ink}\">${s}</h3>`;\nconst periodo = `${fDate(wStart)} – ${fDate(wEnd - 1, { day: 'numeric', month: 'short', year: 'numeric' })}`;\nconst goalBlock = objetivo ? `${h3('Objetivo del mes')}\n<div style=\"font-size:13px;color:${C.muted};margin-bottom:6px\">${esc(objetivo.mes)} · día ${objetivo.dias} · ${money(objetivo.acumulado, 0)} de ${money(objetivo.objetivo, 0)}</div>\n<div style=\"background:${C.soft};border-radius:6px;height:14px\"><div style=\"background:${objetivo.proyeccion_pct >= 100 ? C.up : C.accent};height:14px;border-radius:6px;width:${Math.min(100, objetivo.progreso_pct)}%\"></div></div>\n<div style=\"font-size:13px;margin-top:6px\">${nf(objetivo.progreso_pct, 1)} % conseguido · proyección: <b>${money(objetivo.proyeccion, 0)}</b> (${nf(objetivo.proyeccion_pct, 0)} %)</div>` : '';\n\nconst body = `<div style=\"font-size:12px;letter-spacing:.08em;color:${C.muted};text-transform:uppercase\">Denoro Automations · Informe semanal</div>\n<h1 style=\"margin:4px 0 2px;font-size:24px;color:${C.ink}\">${esc(cfg.tienda)}</h1>\n<div style=\"color:${C.muted};font-size:13px\">Semana del ${periodo}${fuente === 'demo' ? ' · <b>datos de ejemplo</b>' : ''}</div>\n<table width=\"100%\" cellspacing=\"0\" style=\"margin-top:16px\"><tr>\n${tile('Ventas', money(W.ventas, 0), kpis.ventas.cambio_pct)}${tile('Pedidos', nf(W.pedidos), kpis.pedidos.cambio_pct)}\n${tile('Ticket medio', money(W.ticket_medio), kpis.ticket_medio.cambio_pct)}${tile('Devoluciones', nf(W.tasa_devolucion, 1) + ' %', kpis.tasa_devolucion.cambio_pct, true)}\n</tr></table>\n${h3('Lo más importante')}\n<ul style=\"margin:0;padding-left:18px;font-size:14px;line-height:1.6\">${insights.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>\n${h3('Ventas por día')}<table width=\"100%\" cellspacing=\"0\">${dayRows}</table>\n${h3('Top 5 productos')}<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>${th('Producto')}${th('Uds', 1)}${th('Ventas', 1)}${th('vs sem. ant.', 1)}</tr>${topRows}</table>\n${stock.length ? `${h3('⚠️ Stock a reponer')}<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>${th('Producto')}${th('Stock', 1)}${th('Venta/sem', 1)}${th('Cobertura', 1)}</tr>${stockRows}</table>` : ''}\n${canales.length ? `${h3('Ventas por canal')}<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>${th('Canal')}${th('Ventas', 1)}${th('Peso', 1)}</tr>${chanRows}</table>` : ''}\n${goalBlock}\n<p style=\"margin-top:28px;font-size:12px;color:#8a857a\">Unidades: ${nf(W.unidades)} · Clientes nuevos: ${nf(W.clientes_nuevos_pct, 1)} % · Cancelados: ${W.cancelados} · Importe devuelto: ${money(W.importe_devuelto)}. Generado automáticamente el ${fDate(Date.now(), { dateStyle: 'long' })}.</p>`;\n\nconst emailHtml = `<!doctype html><html><body style=\"margin:0;background:#f4f3ef;font-family:Arial,Helvetica,sans-serif;color:#35322c\">\n<table width=\"100%\" cellspacing=\"0\"><tr><td align=\"center\" style=\"padding:24px\">\n<table width=\"680\" cellspacing=\"0\" style=\"background:#fff;border-radius:12px\"><tr><td style=\"padding:28px\">${body}\n<p style=\"font-size:12px;color:#8a857a\">Adjunto: este informe en PDF.</p></td></tr></table></td></tr></table></body></html>`;\nconst pdfHtml = `<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>Informe semanal ${esc(cfg.tienda)}</title>\n<style>@page{size:A4;margin:14mm}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#35322c;-webkit-print-color-adjust:exact;print-color-adjust:exact}\ntable{page-break-inside:auto}tr{page-break-inside:avoid}h3{page-break-after:avoid}</style></head><body>${body}</body></html>`;\n\nconst up = (v) => (v === null ? '' : ` (${pct(v)})`);\nconst telegram = `📊 <b>${esc(cfg.tienda)} · semana ${periodo}</b>${fuente === 'demo' ? ' <i>(demo)</i>' : ''}\\n` +\n  `💶 Ventas: <b>${money(W.ventas, 0)}</b>${up(kpis.ventas.cambio_pct)}\\n` +\n  `🧾 Pedidos: ${nf(W.pedidos)}${up(kpis.pedidos.cambio_pct)} · Ticket: ${money(W.ticket_medio)}\\n` +\n  (top[0] ? `🏆 ${esc(top[0].nombre)} (${nf(top[0].unidades)} uds)\\n` : '') +\n  (stock.length ? `⚠️ Stock bajo: ${stock.slice(0, 3).map((s) => esc(s.nombre)).join(', ')}${stock.length > 3 ? '…' : ''}\\n` : '') +\n  (objetivo ? `🎯 Objetivo del mes: ${nf(objetivo.progreso_pct, 0)} % (proyección ${nf(objetivo.proyeccion_pct, 0)} %)\\n` : '') +\n  'Informe completo en el PDF adjunto.';\n\nconst fileDate = new Date(wStart).toISOString().slice(0, 10);\nreturn [{\n  json: {\n    asunto: `📊 ${cfg.tienda} · Informe semanal ${periodo}: ${money(W.ventas, 0)}${up(kpis.ventas.cambio_pct)}`,\n    email_html: emailHtml,\n    telegram: telegram.slice(0, 1000),\n    email_to: cfg.email_to,\n    email_from: cfg.email_from,\n    telegram_chat_id: cfg.telegram_chat_id,\n    enviar_email: cfg.enviar_email,\n    enviar_telegram: cfg.enviar_telegram,\n    gotenberg_url: cfg.gotenberg_url,\n    nombre_pdf: `informe-semanal-${fileDate}.pdf`,\n    periodo: { inicio: P.semana_inicio, fin: P.semana_fin },\n    fuente, kpis, ventas_por_dia: days, top_productos: top, canales, stock_bajo: stock, objetivo, conclusiones: insights,\n  },\n  binary: {\n    index_html: { data: Buffer.from(pdfHtml, 'utf8').toString('base64'), mimeType: 'text/html', fileName: 'index.html', fileExtension: 'html' },\n  },\n}];\n"
+      }
+    },
+    {
+      "id": "1d88f782-0d05-5350-abb2-741bc62e2526",
+      "name": "Crear PDF (Gotenberg)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.gotenberg_url }}/forms/chromium/convert/html",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "files",
+              "inputDataFieldName": "index_html"
+            },
+            {
+              "parameterType": "formData",
+              "name": "printBackground",
+              "value": "true"
+            },
+            {
+              "parameterType": "formData",
+              "name": "paperWidth",
+              "value": "8.27"
+            },
+            {
+              "parameterType": "formData",
+              "name": "paperHeight",
+              "value": "11.7"
+            },
+            {
+              "parameterType": "formData",
+              "name": "marginTop",
+              "value": "0.4"
+            },
+            {
+              "parameterType": "formData",
+              "name": "marginBottom",
+              "value": "0.4"
+            },
+            {
+              "parameterType": "formData",
+              "name": "marginLeft",
+              "value": "0.4"
+            },
+            {
+              "parameterType": "formData",
+              "name": "marginRight",
+              "value": "0.4"
+            },
+            {
+              "parameterType": "formData",
+              "name": "preferCssPageSize",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "informe_pdf"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "42438849-de00-55d2-8b89-397052dcf84f",
+      "name": "Preparar adjunto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Deja un único adjunto \"informe\": el PDF si Gotenberg respondió; si no, el HTML del informe.\nconst data = $('Calcular KPIs e informe').first();\nconst res = $input.first();\nconst pdf = res.binary && (res.binary.informe_pdf || res.binary.data);\nconst ok = Boolean(pdf) && !res.json.error;\nconst html = data.binary.index_html;\nconst adjunto = ok\n  ? { ...pdf, fileName: data.json.nombre_pdf, mimeType: 'application/pdf', fileExtension: 'pdf' }\n  : { ...html, fileName: data.json.nombre_pdf.replace('.pdf', '.html') };\nreturn [{\n  json: { ...data.json, pdf_generado: ok, aviso_pdf: ok ? '' : 'No se pudo generar el PDF (¿está Gotenberg en marcha?). Se adjunta el HTML.' },\n  binary: { informe: adjunto },\n}];\n"
+      }
+    },
+    {
+      "id": "8c1f0399-2abc-5399-ab8e-7341041df5f7",
+      "name": "¿Email activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b319bf17-3595-51f2-8aa5-61f3e3dac097",
+              "leftValue": "={{ $json.enviar_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "93e7d4e1-5781-59c8-af22-a0a4c2649917",
+      "name": "¿Telegram activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1f43ecc1-b8b8-5160-9d2d-7d0a748787a5",
+              "leftValue": "={{ $json.enviar_telegram }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0359d3e7-09f0-57cf-bf62-75fddd9c0b7e",
+      "name": "Enviar email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2280,
+        0
+      ],
+      "parameters": {
+        "fromEmail": "={{ $json.email_from }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false,
+          "attachments": "informe"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "aeaea647-9f4e-5765-9d8e-ea800d58c885",
+      "name": "Enviar PDF a Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2280,
+        220
+      ],
+      "parameters": {
+        "operation": "sendDocument",
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "binaryData": true,
+        "binaryPropertyName": "informe",
+        "additionalFields": {
+          "caption": "={{ $json.telegram }}",
+          "parse_mode": "HTML"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "164e41bd-6cdb-5129-837c-22f5bdea4dfe",
+      "name": "Al ejecutar para un cliente",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -20,
+        100
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "076ef0eb-3be8-52b7-ad11-fba911c4505c",
+      "name": "Resultado para el panel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        360
+      ],
+      "parameters": {
+        "jsCode": "// (Se añade a cada automatización en su versión «para un cliente»)\n// Guarda en denoro_estado lo que ha pasado en esta ejecución, para enseñarlo en el panel.\nconst d = $input.first()?.json || {};\nconst cfg = $('Configuración').first().json;\nconst txt = (s) => String(s || '').replace(/<br\\s*\\/?>/gi, '\\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\nconst titulo = txt(d.asunto).replace(/^[^\\p{L}\\p{N}]*Denoro · /u, '').replace(/^[^\\p{L}\\p{N}]+/u, '');\nreturn [{ json: {\n  clave: cfg.__clave, token: cfg.__token, snapshot: '',\n  resumen: JSON.stringify({\n    ultima: new Date().toISOString(), ok: true, modo: cfg.modo || null,\n    titulo: (titulo || \"Informe generado\").slice(0, 200),\n    texto: txt(d.telegram).slice(0, 1500),\n    avisado: Boolean(d.asunto && (d.enviar_email || d.enviar_telegram)),\n    demo: [cfg.fuente, cfg.destino].includes('demo'),\n  }),\n} }];\n"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "b06621d9-095c-5293-adc9-7dab60f8488f",
+      "name": "Guardar resultado",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2260,
+        360
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__TABLE_ESTADO__",
+          "cachedResultName": "denoro_estado"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "clave",
+              "condition": "eq",
+              "keyValue": "={{ $json.clave }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    }
+  ],
+  "connections": {
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "¿De dónde leo los pedidos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿De dónde leo los pedidos?": {
+      "main": [
+        [
+          {
+            "node": "Pedidos de ejemplo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pedidos Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pedidos WooCommerce",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedidos Shopify": {
+      "main": [
+        [
+          {
+            "node": "Productos Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Productos Shopify": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedidos WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Productos WooCommerce",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Productos WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Normalizar WooCommerce",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedidos de ejemplo": {
+      "main": [
+        [
+          {
+            "node": "Calcular KPIs e informe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Shopify": {
+      "main": [
+        [
+          {
+            "node": "Calcular KPIs e informe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Calcular KPIs e informe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular KPIs e informe": {
+      "main": [
+        [
+          {
+            "node": "Crear PDF (Gotenberg)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear PDF (Gotenberg)": {
+      "main": [
+        [
+          {
+            "node": "Preparar adjunto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar adjunto": {
+      "main": [
+        [
+          {
+            "node": "¿Email activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Telegram activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resultado para el panel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Email activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Telegram activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar PDF a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Al ejecutar para un cliente": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado para el panel": {
+      "main": [
+        [
+          {
+            "node": "Guardar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "Europe/Madrid",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "__WORKFLOW_ERRORES__"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

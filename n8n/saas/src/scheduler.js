@@ -8,6 +8,7 @@ const due = [];
 for (const c of clientes) {
   if (!c.activo) continue;
   const cfg = parse(c.config, {});
+  if (cfg.servicios && !cfg.servicios.monitor?.activo) continue;   // panel único: monitor no contratado
   if (!(cfg.vigilancias || []).length) continue;
   if (!c.email && !c.telegram_chat_id) continue;
   const horas = [1, 3, 6, 12, 24].includes(Number(cfg.frecuencia_horas)) ? Number(cfg.frecuencia_horas) : 6;

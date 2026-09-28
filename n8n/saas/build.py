@@ -7,10 +7,12 @@ aquí van como marcadores __ID__ que el script de instalación sustituye.
 """
 import importlib.util
 import json
+import sys
 import uuid
 from pathlib import Path
 
 HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE))
 spec = importlib.util.spec_from_file_location("common", HERE.parent / "common.py")
 c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
@@ -19,18 +21,40 @@ NS = uuid.UUID("6b1f3f4e-0d0e-4c55-9d7e-7d3d2a1f0002")
 SRC = HERE / "src"
 OUT = HERE / "workflows"
 ENGINE = {"api.js", "revisar.js"}
+CATALOGO = {"api.js", "planificador-autos.js"}      # llevan delante el catálogo de automatizaciones
+WEB_CSS = HERE.parents[2] / "web" / "src" / "styles.css"   # la hoja de estilos de denoroautomations.com
+
+
+def src(name):
+    return (SRC / name).read_text(encoding="utf-8")
 
 
 def js(name):
-    code = (SRC / name).read_text(encoding="utf-8")
+    code = src(name)
+    if name in CATALOGO:
+        code = src("automatizaciones.js") + "\n" + code
     if name in ENGINE:
-        code = (SRC / "engine.js").read_text(encoding="utf-8") + "\n" + (SRC / "messages.js").read_text(encoding="utf-8") + "\n" + code
+        code = src("engine.js") + "\n" + src("messages.js") + "\n" + code
     return code
 
 
+def estilos_web():
+    """Los paneles usan la misma hoja de estilos que la web. Si la carpeta web está al lado, se toma de ahí
+    y se actualiza la copia de este repo (src/web-styles.css), que es la que se usa si no está."""
+    copia = SRC / "web-styles.css"
+    if WEB_CSS.exists():
+        css = WEB_CSS.read_text(encoding="utf-8")
+        if not copia.exists() or copia.read_text(encoding="utf-8") != css:
+            copia.write_text(css, encoding="utf-8")
+        return css
+    return copia.read_text(encoding="utf-8")
+
+
 def html(name):
-    page = (SRC / name).read_text(encoding="utf-8")
-    return page.replace("/*CSS*/", (SRC / "shared.css").read_text(encoding="utf-8"))
+    page = src(name)
+    css = estilos_web() + "\n/* ---- panel ---- */\n" + src("panel.css")
+    autos = src("automatizaciones.js").split("if (typeof module")[0]
+    return page.replace("/*CSS*/", css).replace("/*AUTOS*/", autos)
 
 
 def node(name, type_, version, pos, params, **extra):
@@ -87,10 +111,10 @@ def switch(name, pos, values, field="siguiente"):
     return node(name, "n8n-nodes-base.switch", 3, pos, {"rules": {"values": [rule(v, field) for v in values]}, "options": {}})
 
 
-def execute(name, pos, **extra):
+def execute(name, pos, workflow="__WORKFLOW_REVISAR__", **extra):
     return node(name, "n8n-nodes-base.executeWorkflow", 1.2, pos, {
         "source": "database",
-        "workflowId": {"__rl": True, "mode": "id", "value": "__WORKFLOW_REVISAR__"},
+        "workflowId": {"__rl": True, "mode": "id", "value": workflow},
         "workflowInputs": {"mappingMode": "defineBelow", "value": {}, "matchingColumns": [], "schema": [],
                            "attemptToConvertTypes": False, "convertFieldsToString": True},
         "mode": "each", "options": {"waitForSubWorkflow": True}}, **extra)
@@ -102,6 +126,7 @@ def sticky(name, pos, text, w=420, h=260, color=5):
 
 def panel_api():
     token_like = "={{ $('API').first().json.body.token ? $('API').first().json.body.token + ':%' : '%:__cliente' }}"
+    token_like2 = "={{ $('API').first().json.body.token ? $('API').first().json.body.token + ':%' : '%:auto-%' }}"
     req = "$('Procesar petición').first().json"
     nodes = [
         sticky("Nota", [-520, -420], (
@@ -119,9 +144,9 @@ def panel_api():
 
         webhook("API", [-400, 320], "POST", "denoro/api"),
         dt_get("Leer clientes", [-180, 320], "CLIENTES", "denoro_clientes"),
-        dt_get("Leer estado", [40, 320], "ESTADO", "denoro_estado", [("clave", "like", token_like)]),
+        dt_get("Leer estado", [40, 320], "ESTADO", "denoro_estado", [("clave", "like", token_like), ("clave", "like", token_like2)], match="anyCondition"),
         node("Procesar petición", "n8n-nodes-base.code", 2, [260, 320], {"jsCode": js("api.js")}),
-        switch("¿Qué hago?", [480, 320], ["guardar", "probar", "revisar", "responder"]),
+        switch("¿Qué hago?", [480, 320], ["guardar", "probar", "revisar", "responder", "ejecutar"]),
         node("Fila cliente", "n8n-nodes-base.code", 2, [720, 140], {"jsCode": js("fila.js")}),
         dt_upsert("Guardar cliente", [940, 140], "CLIENTES", "denoro_clientes", "token"),
         respond("Responder", [1180, 320], f"={{{{ {req}.respuesta }}}}", f"={{{{ {req}.status }}}}"),
@@ -141,6 +166,14 @@ def panel_api():
         execute("Revisar este cliente", [720, 660], onError="continueRegularOutput", alwaysOutputData=True),
         node("Resultado revisión", "n8n-nodes-base.code", 2, [940, 660], {"jsCode": js("resultado-revision.js")}, executeOnce=True),
         respond("Responder revisión", [1160, 660], "={{ $json.respuesta }}", "={{ $json.status }}"),
+
+        execute("Ejecutar automatización", [720, 860], workflow="={{ $json.workflow_id }}", onError="continueRegularOutput", alwaysOutputData=True),
+        node("Resultado ejecución", "n8n-nodes-base.code", 2, [940, 860], {"jsCode": js("ejecutar-resultado.js")}, executeOnce=True),
+        c.gate("¿Ha fallado?", "fallo", [1160, 860]),
+        node("Fila de error", "n8n-nodes-base.code", 2, [1380, 780], {"jsCode": js("fila-error.js")}),
+        dt_upsert("Guardar error", [1600, 780], "ESTADO", "denoro_estado", "clave"),
+        respond("Responder ejecución", [1820, 880], "={{ $('Resultado ejecución').first().json.respuesta }}",
+                "={{ $('Resultado ejecución').first().json.status }}"),
     ]
     conns = c.link(
         ("Panel", "HTML panel"), ("HTML panel", "Responder panel"),
@@ -153,6 +186,9 @@ def panel_api():
         ("¿Qué hago?", "Revisar este cliente", 2), ("Revisar este cliente", "Resultado revisión"),
         ("Resultado revisión", "Responder revisión"),
         ("¿Qué hago?", "Responder", 3),
+        ("¿Qué hago?", "Ejecutar automatización", 4), ("Ejecutar automatización", "Resultado ejecución"),
+        ("Resultado ejecución", "¿Ha fallado?"), ("¿Ha fallado?", "Fila de error", 0), ("Fila de error", "Guardar error"),
+        ("Guardar error", "Responder ejecución"), ("¿Ha fallado?", "Responder ejecución", 1),
     )
     return c.workflow("Denoro SaaS — Panel y API", nodes, conns)
 
@@ -261,6 +297,36 @@ def planificador():
     return c.workflow("Denoro SaaS — Planificador", nodes, conns)
 
 
+def planificador_autos():
+    """Cada 30 minutos lanza las automatizaciones del panel único que tocan, cliente a cliente."""
+    nodes = [
+        sticky("Nota", [-420, -300], (
+            "## Denoro · Planificador de automatizaciones\nCada 30 minutos mira, cliente a cliente, qué automatizaciones "
+            "de su panel tocan (según la frecuencia que eligió) y lanza su workflow *Denoro SaaS — …*.\n"
+            "Si una falla, lo anota en el panel del cliente y las demás siguen. El monitor de precios va aparte "
+            "(*Denoro SaaS — Planificador*)."), w=440, h=200),
+        node("Cada 30 minutos", "n8n-nodes-base.scheduleTrigger", 1.2, [-200, 0], {"rule": {"interval": [{"field": "minutes", "minutesInterval": 30}]}}),
+        node("Probar manualmente", "n8n-nodes-base.manualTrigger", 1, [-200, 180], {}),
+        dt_get("Leer clientes", [20, 80], "CLIENTES", "denoro_clientes"),
+        dt_get("Leer estado", [240, 80], "ESTADO", "denoro_estado", [("clave", "like", "%:auto-%")]),
+        node("Automatizaciones pendientes", "n8n-nodes-base.code", 2, [460, 80], {"jsCode": js("planificador-autos.js")}),
+        node("¿Se puede ejecutar?", "n8n-nodes-base.if", 2, [680, 80], {
+            "conditions": {"options": {"caseSensitive": True, "leftValue": "", "typeValidation": "loose"},
+                           "conditions": [{"id": str(uuid.uuid5(NS, "gate-saltar")), "leftValue": "={{ $json.saltar }}", "rightValue": "",
+                                           "operator": {"type": "boolean", "operation": "true", "singleValue": True}}],
+                           "combinator": "and"}, "options": {}}),
+        execute("Ejecutar automatización", [900, 160], workflow="={{ $json.workflow_id }}", onError="continueRegularOutput"),
+        node("Anotar fallos", "n8n-nodes-base.code", 2, [1120, 80], {"jsCode": js("planificador-anotar.js")}, alwaysOutputData=False),
+        dt_upsert("Guardar fallos", [1340, 80], "ESTADO", "denoro_estado", "clave"),
+    ]
+    conns = c.link(("Cada 30 minutos", "Leer clientes"), ("Probar manualmente", "Leer clientes"),
+                   ("Leer clientes", "Leer estado"), ("Leer estado", "Automatizaciones pendientes"),
+                   ("Automatizaciones pendientes", "¿Se puede ejecutar?"),
+                   ("¿Se puede ejecutar?", "Anotar fallos", 0), ("¿Se puede ejecutar?", "Ejecutar automatización", 1),
+                   ("Ejecutar automatización", "Anotar fallos"), ("Anotar fallos", "Guardar fallos"))
+    return c.workflow("Denoro SaaS — Planificador de automatizaciones", nodes, conns)
+
+
 def inject_html(wf):
     for n in wf["nodes"]:
         code = n["parameters"].get("jsCode", "")
@@ -273,8 +339,12 @@ def inject_html(wf):
 
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    for fname, wf in {"panel-api.json": inject_html(panel_api()), "revisar-cliente.json": revisar_cliente(),
-                      "planificador.json": planificador(), "contacto.json": contacto(),
-                      "backup.json": backup()}.items():
+    salida = {"panel-api.json": inject_html(panel_api()), "revisar-cliente.json": revisar_cliente(),
+              "planificador.json": planificador(), "contacto.json": contacto(), "backup.json": backup(),
+              "planificador-automatizaciones.json": planificador_autos()}
+    from automatizaciones_cliente import ORIGENES, version_cliente
+    for auto_id in ORIGENES:
+        salida[f"auto-{auto_id}.json"] = version_cliente(auto_id, "__TABLE_ESTADO__")
+    for fname, wf in salida.items():
         (OUT / fname).write_text(json.dumps(wf, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"{fname}: {len(wf['nodes'])} nodos")

@@ -1,0 +1,856 @@
+{
+  "name": "Denoro SaaS — Facturas y albaranes",
+  "nodes": [
+    {
+      "id": "37515c99-de3d-5095-82ce-8d8837f06061",
+      "name": "Nota: cómo usarlo",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -540,
+        -360
+      ],
+      "parameters": {
+        "content": "## Facturas y albaranes · versión para el panel\nLa lanzan el **panel de Denoro** (botón *Ejecutar ahora*) y el **Planificador de automatizaciones**.\nLos ajustes de cada cliente llegan en la entrada y se mezclan con los valores por defecto del nodo **Configuración**: aquí no hay que editar nada.\n\nSe genera con `n8n/saas/build.py` a partir del workflow original: no lo edites a mano.",
+        "width": 540,
+        "height": 220,
+        "color": 5
+      }
+    },
+    {
+      "id": "4a19d239-7f55-55a4-a4a8-7152e3fc0c3e",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// ============ CONFIGURACIÓN DEL CLIENTE (edita solo este bloque) ============\nconst CONFIG_BASE = {\n  // --- quién emite la factura (sale tal cual en el PDF) ---\n  emisor: {\n    nombre: 'Tienda Demo, S.L.',\n    nif: 'B00000000',\n    direccion: 'Calle Ejemplo 1',\n    cp_poblacion: '08001 Barcelona',\n    pais: 'España',\n    email: 'facturacion@tienda-demo.test',\n    telefono: '',\n  },\n\n  fuente: 'demo',                 // 'demo', 'shopify' o 'woocommerce'\n  documento: 'factura',           // 'factura', 'albaran' o 'ambos'\n\n  serie: 'F',                     // prefijo del número: F2026-0001\n  digitos: 4,                     // ceros a la izquierda del correlativo\n  reiniciar_cada_anio: true,      // el correlativo vuelve a 1 en enero\n\n  iva: 21,                        // tipo por defecto, si la línea no trae el suyo\n  precios_con_iva: true,          // true = los precios de la tienda ya llevan IVA incluido\n  moneda: 'EUR',\n\n  enviar_al_cliente: true,        // false = solo se genera y se guarda, no se envía\n  max_por_ejecucion: 25,\n  texto_pie: 'Gracias por tu compra.',\n  gotenberg_url: 'http://host.docker.internal:3000',\n\n  email_from: 'facturacion@tu-dominio.com',   // remitente de las facturas\n  email_to: 'cliente@ejemplo.com',            // a quién llega el RESUMEN diario\n  telegram_chat_id: 'TU_CHAT_ID',\n};\n// ============================================================================\n\n// ---- Panel único de Denoro: los ajustes del cliente llegan en la entrada ----\nconst __ENTRADA = $input.first().json || {};\nconst __limpio = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, x]) => x !== '' && x !== null && x !== undefined));\nconst __mezclar = (b, o) => {\n  const r = { ...b };\n  for (const [k, v] of Object.entries(o || {})) {\n    if (v && typeof v === 'object' && !Array.isArray(v) && b[k] && typeof b[k] === 'object' && !Array.isArray(b[k])) r[k] = { ...b[k], ...__limpio(v) };\n    else if (v !== undefined && v !== null) r[k] = v;\n  }\n  return r;\n};\nconst CONFIG = { ...__mezclar(CONFIG_BASE, __ENTRADA.config), __token: String(__ENTRADA.token || ''), __auto: String(__ENTRADA.auto || ''), __clave: String(__ENTRADA.clave || '') };\nif (!CONFIG.__token || !CONFIG.__clave) throw new Error('Esta versión se lanza desde el panel de Denoro (falta el cliente)');\nif (!['demo', 'shopify', 'woocommerce'].includes(CONFIG.fuente)) {\n  throw new Error(`fuente \"${CONFIG.fuente}\" no válida: usa demo, shopify o woocommerce`);\n}\nif (!['factura', 'albaran', 'ambos'].includes(CONFIG.documento)) {\n  throw new Error(`documento \"${CONFIG.documento}\" no válido: usa factura, albaran o ambos`);\n}\n// Una factura sin estos datos no es válida en España, así que mejor parar aquí.\nfor (const campo of ['nombre', 'nif', 'direccion', 'cp_poblacion']) {\n  if (!String(CONFIG.emisor[campo] || '').trim()) {\n    throw new Error(`Falta emisor.${campo}: una factura necesita el nombre fiscal, el NIF y el domicilio de quien la emite`);\n  }\n}\nif (!/^[A-Z]?\\d{7,8}[A-Z0-9]$/i.test(String(CONFIG.emisor.nif).replace(/[\\s-]/g, ''))) {\n  throw new Error(`El NIF \"${CONFIG.emisor.nif}\" no tiene una forma válida (p. ej. B12345678 o 12345678Z)`);\n}\nif (!String(CONFIG.serie || '').trim()) throw new Error('La serie no puede estar vacía');\nif (!(CONFIG.digitos >= 1 && CONFIG.digitos <= 8)) throw new Error('digitos debe estar entre 1 y 8');\nif (!(CONFIG.iva >= 0 && CONFIG.iva <= 100)) throw new Error('iva debe estar entre 0 y 100');\nif (!(CONFIG.max_por_ejecucion >= 1 && CONFIG.max_por_ejecucion <= 200)) {\n  throw new Error('max_por_ejecucion debe estar entre 1 y 200');\n}\nif (!/^https?:\\/\\//i.test(String(CONFIG.gotenberg_url || ''))) {\n  throw new Error('gotenberg_url tiene que apuntar al servicio que convierte el HTML en PDF');\n}\nconst PLACEHOLDER = /ejemplo\\.com|tu-dominio|TU_CHAT_ID/i;\nfor (const k of ['email_to', 'email_from', 'telegram_chat_id']) {\n  if (PLACEHOLDER.test(String(CONFIG[k] || ''))) {\n    throw new Error(`Configura \"${k}\" en el nodo Configuración (ahora tiene un valor de ejemplo). Déjalo vacío ('') para desactivar ese canal.`);\n  }\n}\nif (CONFIG.enviar_al_cliente && !CONFIG.email_from) {\n  throw new Error('Falta email_from: sin remitente no se pueden enviar las facturas');\n}\nif (CONFIG.telegram_chat_id && !/^-?\\d+$|^@\\w+$/.test(String(CONFIG.telegram_chat_id))) {\n  throw new Error('telegram_chat_id debe ser un número (p. ej. 123456789) o @canal');\n}\nif (!CONFIG.email_to && !CONFIG.telegram_chat_id) throw new Error('Configura al menos un canal para el resumen: email_to o telegram_chat_id');\n\nreturn [{ json: {\n  ...CONFIG,\n  enviar_email: Boolean(CONFIG.email_to),\n  enviar_telegram: Boolean(CONFIG.telegram_chat_id),\n  ahora: new Date().toISOString(),\n} }];\n"
+      }
+    },
+    {
+      "id": "de231f3f-7ecb-5a09-af4e-d33e65008e58",
+      "name": "¿De dónde saco los pedidos?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        460,
+        100
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "demo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "demo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "shopify",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "shopify"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "woocommerce",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "woocommerce"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "87160fef-df4a-5922-8611-945abe00ecec",
+      "name": "Pedidos de ejemplo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        -60
+      ],
+      "parameters": {
+        "jsCode": "// Pedidos de ejemplo: uno de particular, uno de empresa con NIF, uno con dos tipos de IVA,\n// uno sin email y uno ya facturado en una pasada anterior.\nconst cfg = $('Configuración').first().json;\nconst ahora = new Date(cfg.ahora).getTime();\nconst hace = (h) => new Date(ahora - h * 3600000).toISOString();\nconst L = (titulo, unidades, precio, iva) => ({ titulo, unidades, precio, iva });\n\nconst P = (id, numero, nombre, email, lineas, extra = {}) => ({ json: {\n  id, numero_pedido: numero, fecha: hace(2),\n  cliente: { nombre, email, nif: extra.nif || '', direccion: extra.direccion || 'Calle Falsa 1',\n    cp_poblacion: extra.cp_poblacion || '28001 Madrid', pais: 'España' },\n  lineas, envio: extra.envio ?? 4.95, descuento: extra.descuento ?? 0,\n  moneda: cfg.moneda, pagado: extra.pagado ?? true,\n} });\n\nreturn [\n  P('p-9001', 1001, 'Ana Ruiz', 'ana@ejemplo.test', [\n    L('Botella térmica 750 ml', 2, 24.90), L('Taza de cerámica 350 ml', 1, 14.50)]),\n  P('p-9002', 1002, 'Muebles Nord, S.L.', 'compras@nord.test', [\n    L('Mesa de comedor extensible', 1, 449.00)], { nif: 'B12345678', direccion: 'Avinguda Diagonal 200', cp_poblacion: '08018 Barcelona', envio: 0 }),\n  P('p-9003', 1003, 'Luis Sáez', 'luis@ejemplo.test', [\n    L('Cuaderno de tapa dura A5', 3, 12.90, 21), L('Libro de recetas', 1, 19.90, 4)], { descuento: 5 }),\n  P('p-9004', 1004, 'Marta Gil', '', [L('Vela de soja 220 g', 1, 26.00)]),\n  P('p-9005', 1005, 'Pedro Lima', 'pedro@ejemplo.test', [L('Alfombrilla de escritorio', 1, 34.00)]),\n  P('p-9006', 1006, 'Sara Vega', 'sara@ejemplo.test', [L('Sartén 28 cm', 1, 39.90)], { pagado: false }),\n];\n"
+      }
+    },
+    {
+      "id": "9aebc554-787f-5138-afbe-3e4667419739",
+      "name": "Pedidos Shopify",
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [
+        700,
+        120
+      ],
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "order",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {
+          "status": "any",
+          "financialStatus": "paid"
+        }
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "ca02975e-36be-529a-a5d7-9894016a2992",
+      "name": "Normalizar Shopify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        120
+      ],
+      "parameters": {
+        "jsCode": "// Pedidos de Shopify con la forma que usa el resto del workflow.\nconst cfg = $('Configuración').first().json;\nconst salida = [];\nfor (const item of $input.all()) {\n  const o = item.json;\n  if (!o || !o.id) continue;\n  const dir = o.billing_address || o.shipping_address || {};\n  salida.push({ json: {\n    id: String(o.id),\n    numero_pedido: o.order_number || o.name || o.id,\n    fecha: o.processed_at || o.created_at,\n    cliente: {\n      nombre: [dir.first_name, dir.last_name].filter(Boolean).join(' ') || dir.company || o.email || 'Cliente',\n      email: (o.email || '').trim().toLowerCase(),\n      nif: (o.note_attributes || []).find((a) => /nif|cif|vat|dni/i.test(a.name))?.value || '',\n      direccion: [dir.address1, dir.address2].filter(Boolean).join(', '),\n      cp_poblacion: [dir.zip, dir.city].filter(Boolean).join(' '),\n      pais: dir.country || 'España',\n    },\n    lineas: (o.line_items || []).map((l) => ({\n      titulo: l.title + (l.variant_title ? ` · ${l.variant_title}` : ''),\n      unidades: l.quantity,\n      precio: parseFloat(l.price || 0),\n      iva: l.tax_lines && l.tax_lines[0] ? Math.round(parseFloat(l.tax_lines[0].rate || 0) * 100) : null,\n    })),\n    envio: parseFloat(o.total_shipping_price_set?.shop_money?.amount ?? o.shipping_lines?.[0]?.price ?? 0),\n    descuento: parseFloat(o.total_discounts || 0),\n    moneda: o.currency || cfg.moneda,\n    pagado: o.financial_status === 'paid',\n  } });\n}\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "b0d0e29c-9aa2-5403-b218-afb7e44c0b39",
+      "name": "Pedidos WooCommerce",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "resource": "order",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "b66567ee-29c0-55d9-b31f-8693abe96037",
+      "name": "Normalizar WooCommerce",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Pedidos de WooCommerce con la forma que usa el resto del workflow.\nconst cfg = $('Configuración').first().json;\nconst salida = [];\nfor (const item of $input.all()) {\n  const o = item.json;\n  if (!o || !o.id) continue;\n  const b = o.billing || {};\n  const meta = (o.meta_data || []).find((m) => /nif|cif|vat|dni/i.test(m.key));\n  salida.push({ json: {\n    id: String(o.id),\n    numero_pedido: o.number || o.id,\n    fecha: o.date_paid || o.date_created,\n    cliente: {\n      nombre: [b.first_name, b.last_name].filter(Boolean).join(' ') || b.company || 'Cliente',\n      email: (b.email || '').trim().toLowerCase(),\n      nif: (meta && String(meta.value)) || '',\n      direccion: [b.address_1, b.address_2].filter(Boolean).join(', '),\n      cp_poblacion: [b.postcode, b.city].filter(Boolean).join(' '),\n      pais: b.country || 'España',\n    },\n    lineas: (o.line_items || []).map((l) => ({\n      titulo: l.name,\n      unidades: l.quantity,\n      precio: l.quantity ? Math.round((parseFloat(l.total || 0) + parseFloat(l.total_tax || 0)) / l.quantity * 100) / 100 : 0,\n      iva: null,\n    })),\n    envio: parseFloat(o.shipping_total || 0) + parseFloat(o.shipping_tax || 0),\n    descuento: parseFloat(o.discount_total || 0),\n    moneda: o.currency || cfg.moneda,\n    pagado: ['processing', 'completed'].includes(o.status),\n  } });\n}\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "f363abce-e14c-5b4b-8923-49c340e6d951",
+      "name": "Numerar facturas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const __estadoCliente = () => { const g = $getWorkflowStaticData('global'); const k = String($('Configuración').first().json.__token || '_'); g.clientes = g.clientes || {}; return (g.clientes[k] = g.clientes[k] || {}); };\n// Asigna el número correlativo y calcula la base, el IVA por tipos y el total.\n// Un pedido ya facturado NUNCA se vuelve a numerar: el número queda guardado por pedido.\nconst cfg = $('Configuración').first().json;\nconst estado = __estadoCliente();\nestado.emitidas = estado.emitidas || {};\nestado.contador = estado.contador || { anio: null, siguiente: 1 };\n\nconst pedidos = $input.all().map((i) => i.json).filter((p) => p && p.id);\nif (!pedidos.length) throw new Error('No llegó ningún pedido');\n\nconst anio = new Date(cfg.ahora).getFullYear();\nif (estado.contador.anio === null) estado.contador.anio = anio;\nelse if (cfg.reiniciar_cada_anio && estado.contador.anio !== anio) estado.contador = { anio, siguiente: 1 };\n\nconst redondear = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;\nconst omitidos = { ya_facturados: 0, sin_pagar: 0, sin_lineas: 0 };\nconst pendientes = [];\nfor (const p of pedidos) {\n  if (estado.emitidas[p.id]) { omitidos.ya_facturados += 1; continue; }\n  if (!p.pagado) { omitidos.sin_pagar += 1; continue; }\n  if (!Array.isArray(p.lineas) || !p.lineas.length) { omitidos.sin_lineas += 1; continue; }\n  pendientes.push(p);\n}\npendientes.sort((a, b) => Date.parse(a.fecha) - Date.parse(b.fecha));   // por fecha: el número sigue al tiempo\nconst aFacturar = pendientes.slice(0, cfg.max_por_ejecucion);\n\nconst facturas = [];\nfor (const p of aFacturar) {\n  const brutas = p.lineas.map((l) => ({\n    titulo: l.titulo || 'Producto',\n    unidades: Number(l.unidades) || 1,\n    precio: Number(l.precio) || 0,\n    iva: (l.iva === null || l.iva === undefined) ? cfg.iva : Number(l.iva),\n  }));\n  if (Number(p.envio) > 0) {\n    brutas.push({ titulo: 'Gastos de envío', unidades: 1, precio: Number(p.envio), iva: cfg.iva });\n  }\n  const totalBruto = brutas.reduce((s, l) => s + l.precio * l.unidades, 0);\n  const descuento = Math.min(Number(p.descuento) || 0, totalBruto);\n\n  // Todo en céntimos enteros: así la base y la cuota suman el total exacto, sin céntimos sueltos.\n  const c = (n) => Math.round((Number(n) + Number.EPSILON) * 100);\n  // Importe de cada línea = precio × unidades, lo que ve el cliente. El descuento sale aparte.\n  const lineas = brutas.map((l) => ({ ...l, importe: c(l.precio * l.unidades) / 100 }));\n\n  // El descuento se reparte entre los tipos de IVA según su peso; el último tipo absorbe el\n  // redondeo para que la suma sea exactamente lo que pagó el cliente.\n  const tipos = [];\n  for (const l of lineas) {\n    let t = tipos.find((x) => x.tipo === l.iva);\n    if (!t) { t = { tipo: l.iva, bruto: 0 }; tipos.push(t); }\n    t.bruto += c(l.precio * l.unidades);\n  }\n  tipos.sort((a, b) => b.tipo - a.tipo);\n  const brutoC = tipos.reduce((s, t) => s + t.bruto, 0);\n  const netoC = brutoC - c(descuento);\n  let repartido = 0;\n  tipos.forEach((t, i) => {\n    t.neto = i === tipos.length - 1 ? netoC - repartido\n      : Math.round(brutoC > 0 ? t.bruto - c(descuento) * (t.bruto / brutoC) : t.bruto);\n    repartido += t.neto;\n  });\n  const porTipo = tipos.map((t) => {\n    const baseC = cfg.precios_con_iva ? Math.round(t.neto / (1 + t.tipo / 100)) : t.neto;\n    const cuotaC = cfg.precios_con_iva ? t.neto - baseC : Math.round(baseC * t.tipo / 100);\n    return { tipo: t.tipo, base: baseC / 100, cuota: cuotaC / 100 };\n  });\n  const base = porTipo.reduce((s, t) => s + c(t.base), 0) / 100;\n  const cuota = porTipo.reduce((s, t) => s + c(t.cuota), 0) / 100;\n\n  const numero = `${cfg.serie}${estado.contador.anio}-${String(estado.contador.siguiente).padStart(cfg.digitos, '0')}`;\n  estado.contador.siguiente += 1;\n  estado.emitidas[p.id] = { numero, fecha: cfg.ahora, total: (c(base) + c(cuota)) / 100 };\n\n  facturas.push({\n    numero,\n    pedido: p.id,\n    numero_pedido: p.numero_pedido,\n    fecha_pedido: p.fecha,\n    fecha_factura: cfg.ahora,\n    cliente: p.cliente,\n    moneda: p.moneda || cfg.moneda,\n    lineas,\n    descuento: redondear(descuento),\n    base, iva_por_tipo: porTipo, cuota,\n    total: (c(base) + c(cuota)) / 100,\n    enviar: Boolean(cfg.enviar_al_cliente && p.cliente && p.cliente.email),\n  });\n}\n\nreturn [{ json: {\n  ...cfg,\n  hay_facturas: facturas.length > 0,\n  facturas,\n  en_espera: pendientes.length - aFacturar.length,\n  omitidos,\n  resumen: {\n    emitidas: facturas.length,\n    total: Math.round(facturas.reduce((s, f) => s + f.total, 0) * 100) / 100,\n    base: Math.round(facturas.reduce((s, f) => s + f.base, 0) * 100) / 100,\n    cuota: Math.round(facturas.reduce((s, f) => s + f.cuota, 0) * 100) / 100,\n    sin_email: facturas.filter((f) => !f.enviar).length,\n    pedidos_vistos: pedidos.length,\n  },\n} }];\n"
+      }
+    },
+    {
+      "id": "d0c5692b-6972-53fd-bf5c-da0dca3dc170",
+      "name": "¿Hay algo que facturar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "f4a290de-12fd-5e99-aa7d-4e5ea66a4a42",
+              "leftValue": "={{ $json.hay_facturas }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "84ba4490-bb1a-5027-bdc3-d536017131a1",
+      "name": "Preparar documentos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Monta el HTML del documento (una página por factura, y otra por albarán si toca)\n// y lo deja como binario para que Gotenberg lo convierta en PDF.\nconst d = $('Numerar facturas').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst VERDE = '#235b54'; const TINTA = '#35322c'; const SUAVE = '#6e6a61'; const REGLA = '#e7e4dc';\nconst dinero = (n, m) => `${Number(n).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${m === 'EUR' ? '€' : m}`;\nconst dia = (f) => new Date(f).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });\n\nconst pagina = (f, tipo) => {\n  const conPrecios = tipo === 'factura';\n  const filas = f.lineas.map((l) => `<tr>\n<td style=\"padding:7px 0;border-bottom:1px solid ${REGLA}\">${esc(l.titulo)}</td>\n<td align=\"right\" style=\"padding:7px 0;border-bottom:1px solid ${REGLA}\">${l.unidades}</td>\n${conPrecios ? `<td align=\"right\" style=\"padding:7px 0;border-bottom:1px solid ${REGLA}\">${dinero(l.precio, f.moneda)}</td>\n<td align=\"right\" style=\"padding:7px 0;border-bottom:1px solid ${REGLA}\">${l.iva} %</td>\n<td align=\"right\" style=\"padding:7px 0;border-bottom:1px solid ${REGLA}\">${dinero(l.importe, f.moneda)}</td>` : ''}\n</tr>`).join('');\n\n  const totales = conPrecios ? `<table width=\"100%\" cellspacing=\"0\" style=\"margin-top:14px\">\n${f.descuento ? `<tr><td align=\"right\" style=\"padding:3px 0;color:${SUAVE}\">Descuento</td><td align=\"right\" width=\"120\" style=\"padding:3px 0\">−${dinero(f.descuento, f.moneda)}</td></tr>` : ''}\n<tr><td align=\"right\" style=\"padding:3px 0;color:${SUAVE}\">Base imponible</td><td align=\"right\" width=\"120\" style=\"padding:3px 0\">${dinero(f.base, f.moneda)}</td></tr>\n${f.iva_por_tipo.map((t) => `<tr><td align=\"right\" style=\"padding:3px 0;color:${SUAVE}\">IVA ${t.tipo} % sobre ${dinero(t.base, f.moneda)}</td><td align=\"right\" style=\"padding:3px 0\">${dinero(t.cuota, f.moneda)}</td></tr>`).join('')}\n<tr><td align=\"right\" style=\"padding:10px 0 0;font-size:15px\"><b>Total</b></td><td align=\"right\" style=\"padding:10px 0 0;font-size:15px;color:${VERDE}\"><b>${dinero(f.total, f.moneda)}</b></td></tr>\n</table>` : '';\n\n  return `<section style=\"page-break-after:always;padding:0 0 10px\">\n<table width=\"100%\" cellspacing=\"0\"><tr>\n<td valign=\"top\">\n  <div style=\"font-family:Georgia,'Times New Roman',serif;font-size:20px;color:${VERDE}\">${esc(d.emisor.nombre)}</div>\n  <div style=\"font-size:11px;color:${SUAVE};line-height:1.5;padding-top:4px\">\n  NIF ${esc(d.emisor.nif)}<br>${esc(d.emisor.direccion)}<br>${esc(d.emisor.cp_poblacion)}<br>${esc(d.emisor.pais)}\n  ${d.emisor.email ? `<br>${esc(d.emisor.email)}` : ''}${d.emisor.telefono ? ` · ${esc(d.emisor.telefono)}` : ''}</div>\n</td>\n<td valign=\"top\" align=\"right\">\n  <div style=\"font-family:Georgia,'Times New Roman',serif;font-size:22px;color:${TINTA};text-transform:uppercase;letter-spacing:.04em\">${tipo === 'factura' ? 'Factura' : 'Albarán'}</div>\n  <div style=\"font-size:13px;color:${TINTA};padding-top:4px\">${esc(f.numero)}${tipo === 'albaran' ? ' · A' : ''}</div>\n  <div style=\"font-size:11px;color:${SUAVE};padding-top:2px\">Fecha: ${dia(f.fecha_factura)}<br>Pedido: ${esc(f.numero_pedido)} · ${dia(f.fecha_pedido)}</div>\n</td></tr></table>\n\n<div style=\"border-top:1px solid ${REGLA};margin:18px 0 0;padding-top:14px\">\n<div style=\"font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:${SUAVE}\">${tipo === 'factura' ? 'Destinatario' : 'Enviar a'}</div>\n<div style=\"font-size:13px;color:${TINTA};line-height:1.5;padding-top:4px\">\n${esc(f.cliente.nombre)}${f.cliente.nif ? `<br>NIF ${esc(f.cliente.nif)}` : ''}<br>${esc(f.cliente.direccion)}<br>${esc(f.cliente.cp_poblacion)}${f.cliente.pais ? `<br>${esc(f.cliente.pais)}` : ''}</div>\n</div>\n\n<table width=\"100%\" cellspacing=\"0\" style=\"margin-top:20px;border-collapse:collapse;font-size:12px;color:${TINTA}\">\n<tr>\n<th align=\"left\" style=\"font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:${SUAVE};border-bottom:1px solid ${TINTA};padding-bottom:6px;font-weight:normal\">Concepto</th>\n<th align=\"right\" style=\"font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:${SUAVE};border-bottom:1px solid ${TINTA};padding-bottom:6px;font-weight:normal\">Uds.</th>\n${conPrecios ? `<th align=\"right\" style=\"font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:${SUAVE};border-bottom:1px solid ${TINTA};padding-bottom:6px;font-weight:normal\">Precio</th>\n<th align=\"right\" style=\"font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:${SUAVE};border-bottom:1px solid ${TINTA};padding-bottom:6px;font-weight:normal\">IVA</th>\n<th align=\"right\" style=\"font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:${SUAVE};border-bottom:1px solid ${TINTA};padding-bottom:6px;font-weight:normal\">Importe</th>` : ''}\n</tr>${filas}</table>\n${totales}\n<div style=\"margin-top:28px;font-size:10px;color:${SUAVE};line-height:1.6;border-top:1px solid ${REGLA};padding-top:10px\">\n${esc(d.texto_pie)}${tipo === 'factura' && d.precios_con_iva ? ' Los precios de la tienda incluyen el IVA; el desglose figura arriba.' : ''}\n</div>\n</section>`;\n};\n\nconst tipos = d.documento === 'ambos' ? ['factura', 'albaran'] : [d.documento];\n\nreturn d.facturas.map((f) => {\n  const html = `<!doctype html><html><head><meta charset=\"utf-8\"><style>\n@page{size:A4;margin:14mm}\nbody{margin:0;font-family:Arial,Helvetica,sans-serif;color:${TINTA};-webkit-print-color-adjust:exact;print-color-adjust:exact}\nsection:last-child{page-break-after:auto}\n</style></head><body>${tipos.map((t) => pagina(f, t)).join('')}</body></html>`;\n  return {\n    json: { ...f, gotenberg_url: d.gotenberg_url, nombre_pdf: `${d.documento === 'albaran' ? 'albaran' : 'factura'}-${f.numero}.pdf` },\n    binary: { index_html: {\n      data: Buffer.from(html, 'utf8').toString('base64'),\n      mimeType: 'text/html', fileName: 'index.html', fileExtension: 'html',\n    } },\n  };\n});\n"
+      }
+    },
+    {
+      "id": "1d88f782-0d05-5350-abb2-741bc62e2526",
+      "name": "Crear PDF (Gotenberg)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1840,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.gotenberg_url }}/forms/chromium/convert/html",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "files",
+              "inputDataFieldName": "index_html"
+            },
+            {
+              "parameterType": "formData",
+              "name": "printBackground",
+              "value": "true"
+            },
+            {
+              "parameterType": "formData",
+              "name": "paperWidth",
+              "value": "8.27"
+            },
+            {
+              "parameterType": "formData",
+              "name": "paperHeight",
+              "value": "11.7"
+            },
+            {
+              "parameterType": "formData",
+              "name": "marginTop",
+              "value": "0.4"
+            },
+            {
+              "parameterType": "formData",
+              "name": "marginBottom",
+              "value": "0.4"
+            },
+            {
+              "parameterType": "formData",
+              "name": "marginLeft",
+              "value": "0.4"
+            },
+            {
+              "parameterType": "formData",
+              "name": "marginRight",
+              "value": "0.4"
+            },
+            {
+              "parameterType": "formData",
+              "name": "preferCssPageSize",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "factura_pdf"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "e664989e-e637-5582-b49b-2e38fb9ab8c4",
+      "name": "Preparar envío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2060,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Deja cada factura lista para enviar al cliente, con el PDF adjunto.\nconst d = $('Numerar facturas').first().json;\nconst docs = $('Preparar documentos').all();\nconst pdfs = $input.all();\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst VERDE = '#235b54'; const TINTA = '#35322c'; const SUAVE = '#6e6a61'; const REGLA = '#e7e4dc'; const PAPEL = '#f4f3ef';\nconst dinero = (n, m) => `${Number(n).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${m === 'EUR' ? '€' : m}`;\n\nconst demo = d.fuente === 'demo' && Boolean(d.email_to);\n\nreturn docs.map((doc, i) => {\n  const f = doc.json;\n  const salida = pdfs[i] || {};\n  const bin = salida.binary || {};\n  // Si Gotenberg no responde, se adjunta el documento en HTML antes que no mandar nada.\n  const pdf = bin.factura_pdf || bin.data || null;\n  const adjunto = pdf\n    ? { ...pdf, fileName: f.nombre_pdf, fileExtension: 'pdf', mimeType: 'application/pdf' }\n    : { ...(doc.binary.index_html), fileName: f.nombre_pdf.replace(/\\.pdf$/, '.html') };\n\n  const email_html = `<!doctype html><html><body style=\"margin:0;background:${PAPEL};font-family:Arial,Helvetica,sans-serif;color:${TINTA}\">\n<table width=\"100%\" cellspacing=\"0\"><tr><td align=\"center\" style=\"padding:24px\">\n<table width=\"560\" cellspacing=\"0\" style=\"background:#fff;border-radius:12px\"><tr><td style=\"padding:28px\">\n<div style=\"font-family:Georgia,'Times New Roman',serif;font-size:21px;color:${VERDE}\">${esc(d.emisor.nombre)}</div>\n<div style=\"font-family:Georgia,'Times New Roman',serif;font-size:22px;color:${TINTA};padding:10px 0 4px\">Tu factura ${esc(f.numero)}</div>\n<p style=\"font-size:15px;color:${TINTA};line-height:1.5;margin:8px 0 16px\">\n${esc(f.cliente.nombre ? `Hola, ${f.cliente.nombre.split(' ')[0]}:` : 'Hola:')} adjuntamos la factura del pedido ${esc(f.numero_pedido)} por ${dinero(f.total, f.moneda)}.</p>\n<table width=\"100%\" cellspacing=\"0\" style=\"font-size:13px;color:${SUAVE}\">\n<tr><td style=\"padding:4px 0;border-bottom:1px solid ${REGLA}\">Número</td><td align=\"right\" style=\"padding:4px 0;border-bottom:1px solid ${REGLA};color:${TINTA}\">${esc(f.numero)}</td></tr>\n<tr><td style=\"padding:4px 0;border-bottom:1px solid ${REGLA}\">Base imponible</td><td align=\"right\" style=\"padding:4px 0;border-bottom:1px solid ${REGLA};color:${TINTA}\">${dinero(f.base, f.moneda)}</td></tr>\n<tr><td style=\"padding:4px 0;border-bottom:1px solid ${REGLA}\">IVA</td><td align=\"right\" style=\"padding:4px 0;border-bottom:1px solid ${REGLA};color:${TINTA}\">${dinero(f.cuota, f.moneda)}</td></tr>\n<tr><td style=\"padding:8px 0;font-size:15px;color:${TINTA}\"><b>Total</b></td><td align=\"right\" style=\"padding:8px 0;font-size:15px;color:${VERDE}\"><b>${dinero(f.total, f.moneda)}</b></td></tr>\n</table>\n<p style=\"font-size:13px;color:${SUAVE};margin-top:18px\">${esc(d.texto_pie)} Si necesitas cualquier cambio en los datos fiscales, responde a este correo.</p>\n<div style=\"border-top:1px solid ${REGLA};margin-top:20px;padding-top:12px;font-size:11px;color:${SUAVE}\">\n${esc(d.emisor.nombre)} · NIF ${esc(d.emisor.nif)} · ${esc(d.emisor.cp_poblacion)}</div>\n</td></tr></table></td></tr></table></body></html>`;\n\n  return {\n    json: { ...f, con_pdf: Boolean(pdf),\n      // En modo demo los clientes son inventados: la factura te llega a ti, con el destinatario en el asunto.\n      email_to: f.enviar ? (demo ? d.email_to : f.cliente.email) : '',\n      email_from: d.email_from,\n      asunto: `${demo ? `[Demo → ${f.cliente.email}] ` : ''}${d.emisor.nombre} · Factura ${f.numero}`, email_html },\n    binary: { factura: adjunto },\n  };\n});\n"
+      }
+    },
+    {
+      "id": "eb75c6c2-ad59-5af4-8f01-e2643fc340ed",
+      "name": "Enviar factura al cliente",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2280,
+        0
+      ],
+      "parameters": {
+        "fromEmail": "={{ $json.email_from }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false,
+          "attachments": "factura"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "afe2a251-a06e-526d-8a7e-a1738b919273",
+      "name": "Recoger facturas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2500,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Apunta qué facturas salieron por email y cuáles no (y por qué).\nconst previstas = $('Preparar envío').all().map((i) => i.json);\nconst respuestas = $input.all().map((i) => i.json || {});\nconst enviadas = [];\nconst fallidas = [];\nconst sin_email = [];\nprevistas.forEach((f, i) => {\n  if (!f.enviar) { sin_email.push({ numero: f.numero, cliente: f.cliente.nombre }); return; }\n  const r = respuestas[i] || {};\n  const error = r.error || r.errorMessage;\n  if (error) {\n    fallidas.push({ numero: f.numero, email: f.cliente.email,\n      error: String(typeof error === 'object' ? error.message || JSON.stringify(error) : error).slice(0, 200) });\n  } else {\n    enviadas.push({ numero: f.numero, email: f.cliente.email, con_pdf: f.con_pdf });\n  }\n});\nreturn [{ json: { hubo_envios: true, enviadas, fallidas, sin_email,\n  sin_pdf: previstas.filter((f) => !f.con_pdf).length } }];\n"
+      }
+    },
+    {
+      "id": "5e89e523-a69f-57f6-8df5-d67919144ffa",
+      "name": "Sin facturas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        240
+      ],
+      "parameters": {
+        "jsCode": "// Rama en la que no había nada que facturar.\nreturn [{ json: { hubo_envios: false, enviadas: [], fallidas: [], sin_email: [], sin_pdf: 0 } }];\n"
+      }
+    },
+    {
+      "id": "deffe88c-e3d8-5f9e-900a-1e24d57042d6",
+      "name": "Registro y resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2740,
+        120
+      ],
+      "parameters": {
+        "jsCode": "// Resumen para el dueño + CSV con el libro de facturas emitidas en esta pasada.\nconst d = $('Numerar facturas').first().json;\nconst ej = $input.first().json || { enviadas: [], fallidas: [], sin_email: [], sin_pdf: 0 };\nconst r = d.resumen;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst VERDE = '#235b54'; const TINTA = '#35322c'; const SUAVE = '#6e6a61';\nconst REGLA = '#e7e4dc'; const PAPEL = '#f4f3ef'; const ALERTA = '#8f2f24';\nconst dinero = (n) => `${Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;\nconst h3 = (t) => `<h3 style=\"font-family:Georgia,'Times New Roman',serif;font-size:17px;color:${VERDE};margin:24px 0 8px;font-weight:normal\">${t}</h3>`;\nconst th = (t, der) => `<th align=\"${der ? 'right' : 'left'}\" style=\"font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:${SUAVE};border-bottom:1px solid ${REGLA};padding:6px 0;font-weight:normal\">${t}</th>`;\nconst td = (t, der) => `<td align=\"${der ? 'right' : 'left'}\" style=\"font-size:13px;color:${TINTA};border-bottom:1px solid ${REGLA};padding:8px 0\">${t}</td>`;\nconst cifra = (n, t, color) => `<td width=\"25%\" style=\"padding:0 8px\"><div style=\"font-family:Georgia,serif;font-size:30px;color:${color || VERDE};line-height:1\">${n}</div><div style=\"font-size:12px;color:${SUAVE};padding-top:2px\">${t}</div></td>`;\n\nconst enviadas = new Set(ej.enviadas.map((e) => e.numero));\nconst filas = d.facturas.slice(0, 15).map((f) => `<tr>${td(esc(f.numero))}${td(esc(f.cliente.nombre))}${td(dinero(f.total), 1)}` +\n  td(enviadas.has(f.numero) ? 'enviada' : (f.enviar ? `<span style=\"color:${ALERTA}\">no salió</span>` : 'sin email'), 1) + '</tr>').join('');\n\nconst cuerpo = d.facturas.length ? `<table width=\"100%\" cellspacing=\"0\" style=\"margin:4px 0 8px\"><tr>\n${cifra(r.emitidas, 'facturas')}${cifra(dinero(r.base), 'base imponible')}${cifra(dinero(r.cuota), 'IVA')}${cifra(dinero(r.total), 'total')}\n</tr></table>\n${h3('Emitidas')}\n<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>${th('Número')}${th('Cliente')}${th('Total', 1)}${th('', 1)}</tr>${filas}</table>\n${d.facturas.length > 15 ? `<p style=\"font-size:12px;color:${SUAVE};margin:8px 0 0\">…y ${d.facturas.length - 15} más en el CSV adjunto.</p>` : ''}\n${ej.fallidas.length ? `<p style=\"font-size:13px;color:${ALERTA};margin-top:16px\">${ej.fallidas.length} factura(s) no se pudieron enviar (la factura está emitida igualmente): ${esc(ej.fallidas.slice(0, 3).map((f) => f.numero).join(', '))}</p>` : ''}\n${ej.sin_email.length ? `<p style=\"font-size:13px;color:${SUAVE};margin-top:12px\">${ej.sin_email.length} sin email del cliente: están en el CSV para enviarlas a mano.</p>` : ''}\n${ej.sin_pdf ? `<p style=\"font-size:13px;color:${ALERTA};margin-top:12px\">${ej.sin_pdf} salieron en HTML en vez de PDF: revisa que Gotenberg esté en marcha.</p>` : ''}\n${d.en_espera ? `<p style=\"font-size:13px;color:${SUAVE};margin-top:12px\">${d.en_espera} pedido(s) esperan a la próxima pasada por el tope de ${d.max_por_ejecucion}.</p>` : ''}\n<p style=\"font-size:13px;color:${SUAVE};margin-top:20px\">De ${r.pedidos_vistos} pedidos: ${d.omitidos.ya_facturados} ya facturados, ${d.omitidos.sin_pagar} sin pagar, ${d.omitidos.sin_lineas} sin líneas.</p>`\n  : `<p style=\"font-size:15px;color:${TINTA};margin:0\">No había pedidos nuevos que facturar. De ${r.pedidos_vistos} revisados: ${d.omitidos.ya_facturados} ya tenían factura y ${d.omitidos.sin_pagar} no están pagados.</p>`;\n\nconst email_html = `<!doctype html><html><body style=\"margin:0;background:${PAPEL};font-family:Arial,Helvetica,sans-serif;color:${TINTA}\">\n<table width=\"100%\" cellspacing=\"0\"><tr><td align=\"center\" style=\"padding:24px\">\n<table width=\"680\" cellspacing=\"0\" style=\"background:#fff;border-radius:12px\"><tr><td style=\"padding:28px\">\n<div style=\"font-family:Georgia,'Times New Roman',serif;font-size:22px;color:${VERDE}\">Facturación · ${esc(d.emisor.nombre)}</div>\n<div style=\"font-size:12px;color:${SUAVE};padding:2px 0 12px;border-bottom:1px solid ${REGLA}\">${new Date(d.ahora).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })} · serie ${esc(d.serie)}</div>\n${cuerpo}\n<div style=\"border-top:1px solid ${REGLA};margin-top:24px;padding-top:12px;font-size:11px;color:${SUAVE}\">Denoro Automations</div>\n</td></tr></table></td></tr></table></body></html>`;\n\nconst telegram = `🧾 <b>Facturación · ${d.emisor.nombre}</b>\\n` +\n  `<b>Emitidas:</b> ${r.emitidas}${d.facturas.length ? ` (${d.facturas[0].numero} → ${d.facturas[d.facturas.length - 1].numero})` : ''}\\n` +\n  `<b>Base:</b> ${dinero(r.base)} · <b>IVA:</b> ${dinero(r.cuota)} · <b>Total:</b> ${dinero(r.total)}\\n` +\n  `<b>Enviadas:</b> ${ej.enviadas.length}` +\n  (ej.fallidas.length ? ` · ⚠️ <b>Con error:</b> ${ej.fallidas.length}` : '') +\n  (ej.sin_email.length ? ` · <b>Sin email:</b> ${ej.sin_email.length}` : '');\n\n// ---- libro de facturas (CSV) ----\nconst celda = (v) => {\n  const s = String(v ?? '').replace(/\\r?\\n\\s*/g, ' ').trim();\n  return /[\";]/.test(s) ? `\"${s.replace(/\"/g, '\"\"')}\"` : s;\n};\nconst cabecera = ['numero', 'fecha', 'pedido', 'cliente', 'nif', 'base', 'iva', 'cuota', 'total', 'estado'];\nconst lineas = [cabecera.join(';'), ...d.facturas.map((f) => [\n  f.numero, new Date(f.fecha_factura).toISOString().slice(0, 10), f.numero_pedido, f.cliente.nombre,\n  f.cliente.nif || '', f.base.toFixed(2).replace('.', ','),\n  f.iva_por_tipo.map((t) => `${t.tipo}%`).join(' + '), f.cuota.toFixed(2).replace('.', ','),\n  f.total.toFixed(2).replace('.', ','),\n  enviadas.has(f.numero) ? 'enviada' : (f.enviar ? 'no enviada' : 'sin email'),\n].map(celda).join(';'))];\n\n// Si en esta pasada no se ha facturado nada, no se manda resumen (corre cada hora).\nconst hayAlgo = d.facturas.length > 0;\nreturn [{\n  json: { ...d, enviar_email: Boolean(d.enviar_email && hayAlgo), enviar_telegram: Boolean(d.enviar_telegram && hayAlgo), hay_algo: hayAlgo, asunto: `Denoro · ${r.emitidas} factura(s) de ${d.emisor.nombre}${r.emitidas ? ` · ${dinero(r.total)}` : ''}`,\n    email_html, telegram, ejecucion: ej },\n  binary: d.facturas.length ? { libro: {\n    data: Buffer.from('﻿' + lineas.join('\\n'), 'utf8').toString('base64'),\n    mimeType: 'text/csv', fileName: `facturas-${new Date(d.ahora).toISOString().slice(0, 10)}.csv`, fileExtension: 'csv',\n  } } : {},\n}];\n"
+      }
+    },
+    {
+      "id": "8c1f0399-2abc-5399-ab8e-7341041df5f7",
+      "name": "¿Email activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        20
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b319bf17-3595-51f2-8aa5-61f3e3dac097",
+              "leftValue": "={{ $json.enviar_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "93e7d4e1-5781-59c8-af22-a0a4c2649917",
+      "name": "¿Telegram activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        240
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1f43ecc1-b8b8-5160-9d2d-7d0a748787a5",
+              "leftValue": "={{ $json.enviar_telegram }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "920ac7a4-a75c-5e3e-bd3d-ed4b39c21230",
+      "name": "Enviar resumen",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3200,
+        20
+      ],
+      "parameters": {
+        "fromEmail": "={{ $json.email_from }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false,
+          "attachments": "libro"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "36cbbf4d-9c16-559f-944c-e954e407fd87",
+      "name": "Enviar a Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3200,
+        240
+      ],
+      "parameters": {
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "text": "={{ $json.telegram }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "f23452a8-de68-56be-8e34-0384b2cad176",
+      "name": "Al ejecutar para un cliente",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -20,
+        100
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "a189a2f5-0e53-5fe1-bfcd-9dfe33d9cf87",
+      "name": "Resultado para el panel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        380
+      ],
+      "parameters": {
+        "jsCode": "// (Se añade a cada automatización en su versión «para un cliente»)\n// Guarda en denoro_estado lo que ha pasado en esta ejecución, para enseñarlo en el panel.\nconst d = $input.first()?.json || {};\nconst cfg = $('Configuración').first().json;\nconst txt = (s) => String(s || '').replace(/<br\\s*\\/?>/gi, '\\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\nconst titulo = txt(d.asunto).replace(/^[^\\p{L}\\p{N}]*Denoro · /u, '').replace(/^[^\\p{L}\\p{N}]+/u, '');\nreturn [{ json: {\n  clave: cfg.__clave, token: cfg.__token, snapshot: '',\n  resumen: JSON.stringify({\n    ultima: new Date().toISOString(), ok: true, modo: cfg.modo || null,\n    titulo: (titulo || \"Nada que facturar\").slice(0, 200),\n    texto: txt(d.telegram).slice(0, 1500),\n    avisado: Boolean(d.asunto && (d.enviar_email || d.enviar_telegram)),\n    demo: [cfg.fuente, cfg.destino].includes('demo'),\n  }),\n} }];\n"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "de879a72-b170-5d44-a02c-c574cd1caff9",
+      "name": "Guardar resultado",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3180,
+        380
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__TABLE_ESTADO__",
+          "cachedResultName": "denoro_estado"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "clave",
+              "condition": "eq",
+              "keyValue": "={{ $json.clave }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    }
+  ],
+  "connections": {
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "¿De dónde saco los pedidos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿De dónde saco los pedidos?": {
+      "main": [
+        [
+          {
+            "node": "Pedidos de ejemplo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pedidos Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pedidos WooCommerce",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedidos Shopify": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedidos WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Normalizar WooCommerce",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedidos de ejemplo": {
+      "main": [
+        [
+          {
+            "node": "Numerar facturas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Shopify": {
+      "main": [
+        [
+          {
+            "node": "Numerar facturas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Numerar facturas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Numerar facturas": {
+      "main": [
+        [
+          {
+            "node": "¿Hay algo que facturar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay algo que facturar?": {
+      "main": [
+        [
+          {
+            "node": "Preparar documentos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin facturas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar documentos": {
+      "main": [
+        [
+          {
+            "node": "Crear PDF (Gotenberg)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear PDF (Gotenberg)": {
+      "main": [
+        [
+          {
+            "node": "Preparar envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar envío": {
+      "main": [
+        [
+          {
+            "node": "Enviar factura al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar factura al cliente": {
+      "main": [
+        [
+          {
+            "node": "Recoger facturas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recoger facturas": {
+      "main": [
+        [
+          {
+            "node": "Registro y resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sin facturas": {
+      "main": [
+        [
+          {
+            "node": "Registro y resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registro y resumen": {
+      "main": [
+        [
+          {
+            "node": "¿Email activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Telegram activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resultado para el panel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Email activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Telegram activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Al ejecutar para un cliente": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado para el panel": {
+      "main": [
+        [
+          {
+            "node": "Guardar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "Europe/Madrid",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "__WORKFLOW_ERRORES__"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

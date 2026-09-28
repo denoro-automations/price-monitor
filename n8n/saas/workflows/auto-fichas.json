@@ -1,0 +1,887 @@
+{
+  "name": "Denoro SaaS — Fichas de producto",
+  "nodes": [
+    {
+      "id": "37515c99-de3d-5095-82ce-8d8837f06061",
+      "name": "Nota: cómo usarlo",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        -340
+      ],
+      "parameters": {
+        "content": "## Fichas de producto · versión para el panel\nLa lanzan el **panel de Denoro** (botón *Ejecutar ahora*) y el **Planificador de automatizaciones**.\nLos ajustes de cada cliente llegan en la entrada y se mezclan con los valores por defecto del nodo **Configuración**: aquí no hay que editar nada.\n\nSe genera con `n8n/saas/build.py` a partir del workflow original: no lo edites a mano.",
+        "width": 520,
+        "height": 220,
+        "color": 5
+      }
+    },
+    {
+      "id": "4a19d239-7f55-55a4-a4a8-7152e3fc0c3e",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// ============ CONFIGURACIÓN DEL CLIENTE (edita solo este bloque) ============\nconst CONFIG_BASE = {\n  tienda: 'Tienda Demo',\n  fuente: 'demo',                 // 'demo', 'csv', 'shopify' o 'woocommerce'\n  csv_url: '',                    // si fuente = 'csv': enlace directo al CSV del catálogo\n  moneda: 'EUR',\n  dominio_tienda: '',             // solo Shopify: tu-tienda.myshopify.com (para los enlaces)\n  idioma: 'es',                   // 'es' o 'en'\n  tono: 'cercano',                // 'cercano', 'tecnico' o 'premium'\n\n  motor: 'plantilla',             // 'plantilla' (sin coste, sin API) u 'openai'\n  modelo: 'gpt-4o-mini',          // solo si motor = 'openai'\n\n  max_productos: 50,              // tope por ejecución (protege la factura de la API)\n  solo_sin_descripcion: true,     // true = solo productos con la descripción vacía o muy corta\n  descripcion_corta: 120,         // por debajo de estos caracteres se considera \"sin descripción\"\n  palabras_clave_extra: [],       // p. ej. ['envío 24h', 'hecho en España']\n\n  largo_titulo: 60,               // máximo de caracteres del título SEO\n  largo_meta: 155,                // máximo de caracteres de la meta descripción\n\n  email_to: 'cliente@ejemplo.com',\n  email_from: 'fichas@tu-dominio.com',   // la cuenta SMTP que envía\n  telegram_chat_id: 'TU_CHAT_ID',\n};\n// ============================================================================\n\n// ---- Panel único de Denoro: los ajustes del cliente llegan en la entrada ----\nconst __ENTRADA = $input.first().json || {};\nconst __limpio = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, x]) => x !== '' && x !== null && x !== undefined));\nconst __mezclar = (b, o) => {\n  const r = { ...b };\n  for (const [k, v] of Object.entries(o || {})) {\n    if (v && typeof v === 'object' && !Array.isArray(v) && b[k] && typeof b[k] === 'object' && !Array.isArray(b[k])) r[k] = { ...b[k], ...__limpio(v) };\n    else if (v !== undefined && v !== null) r[k] = v;\n  }\n  return r;\n};\nconst CONFIG = { ...__mezclar(CONFIG_BASE, __ENTRADA.config), __token: String(__ENTRADA.token || ''), __auto: String(__ENTRADA.auto || ''), __clave: String(__ENTRADA.clave || '') };\nif (!CONFIG.__token || !CONFIG.__clave) throw new Error('Esta versión se lanza desde el panel de Denoro (falta el cliente)');\nif (!['demo', 'csv', 'shopify', 'woocommerce'].includes(CONFIG.fuente)) {\n  throw new Error(`fuente \"${CONFIG.fuente}\" no válida: usa demo, csv, shopify o woocommerce`);\n}\nif (!['plantilla', 'openai'].includes(CONFIG.motor)) {\n  throw new Error(`motor \"${CONFIG.motor}\" no válido: usa plantilla u openai`);\n}\nif (!['es', 'en'].includes(CONFIG.idioma)) throw new Error('idioma debe ser es o en');\nif (!['cercano', 'tecnico', 'premium'].includes(CONFIG.tono)) {\n  throw new Error('tono debe ser cercano, tecnico o premium');\n}\nif (CONFIG.fuente === 'csv' && !/^https?:\\/\\//i.test(String(CONFIG.csv_url || ''))) {\n  throw new Error('Con fuente = csv hace falta un csv_url que empiece por http:// o https://');\n}\nif (!(CONFIG.max_productos >= 1 && CONFIG.max_productos <= 500)) {\n  throw new Error('max_productos debe estar entre 1 y 500');\n}\n// Destinos: vacío = canal desactivado; valores de ejemplo = error claro\nconst PLACEHOLDER = /ejemplo\\.com|tu-dominio|TU_CHAT_ID/i;\nfor (const k of ['email_to', 'email_from', 'telegram_chat_id']) {\n  if (PLACEHOLDER.test(String(CONFIG[k] || ''))) {\n    throw new Error(`Configura \"${k}\" en el nodo Configuración (ahora tiene un valor de ejemplo). Déjalo vacío ('') para desactivar ese canal.`);\n  }\n}\nif (CONFIG.telegram_chat_id && !/^-?\\d+$|^@\\w+$/.test(String(CONFIG.telegram_chat_id))) {\n  throw new Error('telegram_chat_id debe ser un número (p. ej. 123456789) o @canal');\n}\nif (!CONFIG.email_to && !CONFIG.telegram_chat_id) throw new Error('Configura al menos un canal: email_to o telegram_chat_id');\nif (CONFIG.email_to && !CONFIG.email_from) throw new Error('Falta email_from (la cuenta SMTP que envía)');\n\nreturn [{ json: {\n  ...CONFIG,\n  enviar_email: Boolean(CONFIG.email_to),\n  enviar_telegram: Boolean(CONFIG.telegram_chat_id),\n  generado_en: new Date().toISOString(),\n} }];\n"
+      }
+    },
+    {
+      "id": "b9f4a739-86a6-5033-a056-44c7d12a2b38",
+      "name": "¿De dónde saco el catálogo?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        440,
+        100
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "demo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "demo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "csv",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "csv"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "shopify",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "shopify"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "woocommerce",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "woocommerce"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e7618acc-d7fa-51b7-b003-206888932393",
+      "name": "Catálogo de ejemplo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        -180
+      ],
+      "parameters": {
+        "jsCode": "// Catálogo de ejemplo: permite probar el workflow sin conectar ninguna tienda.\n// Los datos son fijos, así dos ejecuciones dan exactamente el mismo resultado.\nconst cfg = $('Configuración').first().json;\nconst P = (sku, titulo, marca, categoria, precio, stock, descripcion, atributos) =>\n  ({ sku, titulo, marca, categoria, precio, moneda: cfg.moneda || 'EUR', stock,\n     url: `https://tienda-demo.test/productos/${sku.toLowerCase()}`, descripcion, atributos });\n\nconst productos = [\n  P('BOT-09', 'Botella térmica 750 ml', 'Nordkap', 'Botellas', 24.9, 0, '', { material: 'acero inoxidable 18/8', capacidad: '750 ml', color: 'verde bosque', mantiene_frio: '24 h', mantiene_calor: '12 h', peso: '395 g', garantia: '2 años' }),\n  P('BOT-11', 'Botella térmica 500 ml', 'Nordkap', 'Botellas', 19.9, 42, '', { material: 'acero inoxidable 18/8', capacidad: '500 ml', color: 'arena', mantiene_frio: '24 h', mantiene_calor: '12 h', peso: '290 g', garantia: '2 años' }),\n  P('MOC-04', 'Mochila de diario 18 L', 'Vela', 'Mochilas', 59.0, 4, '', { material: 'lona reciclada 600D', capacidad: '18 L', color: 'negro', portatil: 'hasta 15\"', impermeable: 'resistente a la lluvia', peso: '640 g', garantia: '5 años' }),\n  P('MOC-07', 'Mochila de viaje 32 L', 'Vela', 'Mochilas', 89.0, 11, 'Mochila de viaje de 32 litros pensada para escapadas de fin de semana: cumple las medidas de equipaje de mano, abre en plano como una maleta y lleva un compartimento acolchado para el portátil de hasta 16 pulgadas.', { material: 'lona reciclada 900D', capacidad: '32 L', color: 'verde oliva', portatil: 'hasta 16\"', cabina: 'medidas de equipaje de mano', peso: '980 g', garantia: '5 años' }),\n  P('CHA-08', 'Chaqueta cortavientos', 'Vela', 'Ropa', 79.0, 18, '', { material: 'nailon reciclado', impermeabilidad: '5.000 mm', color: 'azul noche', tallas: 'S a XXL', peso: '310 g', garantia: '2 años' }),\n  P('CAM-02', 'Camiseta de algodón orgánico', 'Vela', 'Ropa', 24.0, 120, '', { material: 'algodón orgánico 180 g', color: 'crudo', tallas: 'XS a XXL', certificado: 'GOTS', lavado: 'a 30 °C' }),\n  P('TAZ-01', 'Taza de cerámica 350 ml', 'Casa Lumo', 'Cocina', 14.5, 64, '', { material: 'gres esmaltado', capacidad: '350 ml', color: 'blanco roto', apta: 'microondas y lavavajillas', peso: '380 g' }),\n  P('TAZ-03', 'Juego de 4 tazas', 'Casa Lumo', 'Cocina', 49.0, 9, '', { material: 'gres esmaltado', capacidad: '350 ml', unidades: '4', apta: 'microondas y lavavajillas', peso: '1,5 kg' }),\n  P('SAR-05', 'Sartén antiadherente 28 cm', 'Casa Lumo', 'Cocina', 39.9, 27, '', { material: 'aluminio forjado', diametro: '28 cm', antiadherente: 'sin PFOA', induccion: 'apta', mango: 'baquelita', garantia: '3 años' }),\n  P('CUC-02', 'Juego de cuchillos 3 piezas', 'Casa Lumo', 'Cocina', 64.0, 6, '', { material: 'acero al carbono', piezas: '3', mango: 'madera de haya', afilado: 'a mano' }),\n  P('LAM-06', 'Lámpara de mesa LED', 'Casa Lumo', 'Iluminación', 45.0, 15, '', { material: 'aluminio y roble', potencia: '7 W', temperatura: '2700 K regulable', usb: 'carga USB-C', altura: '38 cm' }),\n  P('LAM-09', 'Lámpara de pie de lectura', 'Casa Lumo', 'Iluminación', 99.0, 3, '', { material: 'acero y lino', potencia: '12 W', temperatura: '3000 K', altura: '150 cm', interruptor: 'de pie' }),\n  P('CUA-03', 'Cuaderno de tapa dura A5', 'Papel Norte', 'Papelería', 12.9, 210, '', { paginas: '192', papel: '100 g/m² marfil', rayado: 'liso', cierre: 'goma elástica', encuadernacion: 'cosida' }),\n  P('CUA-05', 'Cuaderno de bolsillo A6', 'Papel Norte', 'Papelería', 7.9, 180, '', { paginas: '96', papel: '90 g/m²', rayado: 'punteado', unidades: 'pack de 2' }),\n  P('BOL-02', 'Bolígrafo de latón', 'Papel Norte', 'Papelería', 29.0, 33, '', { material: 'latón macizo', recambio: 'estándar D1', peso: '42 g', acabado: 'envejece con el uso' }),\n  P('ALF-01', 'Alfombrilla de escritorio', 'Papel Norte', 'Oficina', 34.0, 21, '', { material: 'fieltro y corcho', medidas: '80 × 40 cm', color: 'gris piedra', reverso: 'antideslizante' }),\n  P('AUR-04', 'Auriculares inalámbricos', 'Sonda', 'Audio', 119.0, 8, 'Auriculares inalámbricos con cancelación activa de ruido, ocho horas de batería y veinticuatro más en el estuche. Se conectan por Bluetooth 5.3, resisten el sudor y la lluvia ligera y cargan por USB-C en menos de una hora.', { bateria: '8 h + 24 h con estuche', bluetooth: '5.3', cancelacion: 'activa de ruido', resistencia: 'IPX4', carga: 'USB-C', garantia: '2 años' }),\n  P('ALT-02', 'Altavoz portátil', 'Sonda', 'Audio', 79.0, 14, '', { bateria: '12 h', bluetooth: '5.2', potencia: '20 W', resistencia: 'IP67', peso: '560 g', garantia: '2 años' }),\n  P('CAB-07', 'Cable USB-C trenzado 2 m', 'Sonda', 'Accesorios', 16.9, 96, '', { longitud: '2 m', potencia: '100 W', datos: '480 Mbps', material: 'nailon trenzado', color: 'gris' }),\n  P('CAR-03', 'Cargador de 65 W', 'Sonda', 'Accesorios', 42.0, 2, '', { potencia: '65 W', puertos: '2 USB-C + 1 USB-A', tecnologia: 'GaN', plegable: 'clavijas plegables', garantia: '2 años' }),\n  P('YOG-01', 'Esterilla de yoga 6 mm', 'Sereno', 'Deporte', 54.0, 19, '', { material: 'caucho natural', grosor: '6 mm', medidas: '183 × 61 cm', peso: '2,4 kg', superficie: 'antideslizante' }),\n  P('BAN-02', 'Bandas elásticas (set de 3)', 'Sereno', 'Deporte', 22.0, 47, '', { material: 'látex natural', resistencias: 'suave, media y fuerte', unidades: '3', bolsa: 'incluida' }),\n  P('VEL-04', 'Vela de soja 220 g', 'Sereno', 'Hogar', 26.0, 38, '', { cera: 'soja 100 %', duracion: '45 h', aroma: 'higo y cedro', mecha: 'algodón', recipiente: 'vidrio reutilizable' }),\n  P('DIF-01', 'Difusor de aceites esenciales', 'Sereno', 'Hogar', 49.0, 7, '', { capacidad: '300 ml', autonomia: '10 h', apagado: 'automático', luz: 'cálida regulable', ruido: 'menos de 25 dB' }),\n];\n\nreturn productos.map((p) => ({ json: p }));\n"
+      }
+    },
+    {
+      "id": "a7c6094f-be7c-52ed-b381-c9737fd3993f",
+      "name": "Descargar CSV",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        20
+      ],
+      "parameters": {
+        "url": "={{ $json.csv_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "403de13e-487a-5d36-a01a-1fc8c6808589",
+      "name": "Leer CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        20
+      ],
+      "parameters": {
+        "jsCode": "// Convierte el CSV descargado en productos. Acepta ; o , como separador y comillas dobles.\nconst cfg = $('Configuración').first().json;\nconst entrada = $input.first();\nlet texto = entrada.json.data ?? entrada.json.body ?? entrada.json.texto ?? '';\nif (!texto && entrada.binary) {\n  const key = Object.keys(entrada.binary)[0];\n  texto = Buffer.from(entrada.binary[key].data, 'base64').toString('utf8');\n}\ntexto = String(texto).replace(/^﻿/, '').trim();\nif (!texto) throw new Error('El CSV llegó vacío: revisa csv_url en el nodo Configuración');\n\n// --- lector de CSV con comillas ---\nconst filas = [];\nlet campo = '';\nlet fila = [];\nlet comillas = false;\nconst sep = (texto.split('\\n')[0].match(/;/g) || []).length > (texto.split('\\n')[0].match(/,/g) || []).length ? ';' : ',';\nfor (let i = 0; i < texto.length; i++) {\n  const c = texto[i];\n  if (comillas) {\n    if (c === '\"' && texto[i + 1] === '\"') { campo += '\"'; i++; }\n    else if (c === '\"') comillas = false;\n    else campo += c;\n  } else if (c === '\"') comillas = true;\n  else if (c === sep) { fila.push(campo); campo = ''; }\n  else if (c === '\\n') { fila.push(campo); filas.push(fila); fila = []; campo = ''; }\n  else if (c !== '\\r') campo += c;\n}\nif (campo !== '' || fila.length) { fila.push(campo); filas.push(fila); }\nif (filas.length < 2) throw new Error('El CSV no tiene filas de datos (solo cabecera o nada)');\n\nconst norm = (s) => String(s).trim().toLowerCase()\n  .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');\nconst cabecera = filas[0].map(norm);\nconst ALIAS = {\n  sku: ['sku', 'referencia', 'ref', 'codigo', 'id'],\n  titulo: ['titulo', 'title', 'nombre', 'name', 'producto'],\n  marca: ['marca', 'brand', 'fabricante'],\n  categoria: ['categoria', 'category', 'tipo', 'familia'],\n  precio: ['precio', 'price', 'pvp'],\n  stock: ['stock', 'existencias', 'inventario', 'cantidad', 'qty'],\n  descripcion: ['descripcion', 'description', 'descripcion_larga', 'body_html'],\n  url: ['url', 'enlace', 'link', 'permalink'],\n};\nconst idx = {};\nfor (const [campoDestino, nombres] of Object.entries(ALIAS)) {\n  const i = cabecera.findIndex((h) => nombres.includes(h));\n  if (i >= 0) idx[campoDestino] = i;\n}\nif (idx.sku === undefined) throw new Error(`El CSV necesita una columna de referencia (sku, referencia o codigo). Encontradas: ${cabecera.join(', ')}`);\nif (idx.titulo === undefined) throw new Error(`El CSV necesita una columna de título (titulo, nombre o name). Encontradas: ${cabecera.join(', ')}`);\nconst usadas = new Set(Object.values(idx));\n\nconst numero = (v) => {\n  const n = parseFloat(String(v).replace(/[^0-9,.\\-]/g, '').replace(/\\.(?=\\d{3}\\b)/g, '').replace(',', '.'));\n  return Number.isFinite(n) ? n : null;\n};\nconst productos = [];\nconst vistos = new Set();\nfor (const f of filas.slice(1)) {\n  if (!f.some((v) => String(v).trim() !== '')) continue;\n  const sku = String(f[idx.sku] ?? '').trim();\n  if (!sku || vistos.has(sku)) continue;\n  vistos.add(sku);\n  // el resto de columnas entran como atributos, que es lo que da detalle a la ficha\n  const atributos = {};\n  cabecera.forEach((h, i) => {\n    if (!usadas.has(i) && h && String(f[i] ?? '').trim()) atributos[h] = String(f[i]).trim();\n  });\n  productos.push({\n    sku,\n    titulo: String(f[idx.titulo] ?? '').trim(),\n    marca: idx.marca !== undefined ? String(f[idx.marca] ?? '').trim() : '',\n    categoria: idx.categoria !== undefined ? String(f[idx.categoria] ?? '').trim() : '',\n    precio: idx.precio !== undefined ? numero(f[idx.precio]) : null,\n    moneda: cfg.moneda || 'EUR',\n    stock: idx.stock !== undefined ? numero(f[idx.stock]) : null,\n    url: idx.url !== undefined ? String(f[idx.url] ?? '').trim() : '',\n    descripcion: idx.descripcion !== undefined ? String(f[idx.descripcion] ?? '').trim() : '',\n    atributos,\n  });\n}\nif (!productos.length) throw new Error('El CSV no trajo ningún producto con referencia');\nreturn productos.map((p) => ({ json: p }));\n"
+      }
+    },
+    {
+      "id": "6658496f-b5ea-5fda-a22e-1f3ad23ed9ce",
+      "name": "Productos Shopify",
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [
+        700,
+        220
+      ],
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "product",
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {}
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "ca02975e-36be-529a-a5d7-9894016a2992",
+      "name": "Normalizar Shopify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        220
+      ],
+      "parameters": {
+        "jsCode": "// Deja los productos de Shopify con la misma forma que el resto de fuentes.\nconst cfg = $('Configuración').first().json;\nconst limpiar = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\\s+/g, ' ').trim();\nconst salida = [];\nfor (const item of $input.all()) {\n  const p = item.json;\n  const v = (p.variants && p.variants[0]) || {};\n  const atributos = {};\n  for (const op of p.options || []) {\n    const vals = (op.values || []).filter(Boolean);\n    if (op.name && vals.length) atributos[String(op.name).toLowerCase()] = vals.join(', ');\n  }\n  if (p.tags) atributos.etiquetas = String(p.tags);\n  if (v.weight) atributos.peso = `${v.weight} ${v.weight_unit || 'g'}`;\n  salida.push({ json: {\n    sku: v.sku || String(p.id),\n    id_tienda: p.id,\n    titulo: p.title || '',\n    marca: p.vendor || '',\n    categoria: p.product_type || '',\n    precio: v.price != null ? parseFloat(v.price) : null,\n    moneda: cfg.moneda || 'EUR',\n    stock: v.inventory_quantity ?? null,\n    url: p.handle ? `https://${cfg.dominio_tienda || 'tu-tienda.myshopify.com'}/products/${p.handle}` : '',\n    descripcion: limpiar(p.body_html),\n    atributos,\n  } });\n}\nif (!salida.length) throw new Error('Shopify no devolvió productos: revisa la credencial y que haya catálogo');\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "dd52cc39-fdb7-54dc-9cf6-ae2276190d7a",
+      "name": "Productos WooCommerce",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [
+        700,
+        420
+      ],
+      "parameters": {
+        "resource": "product",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "b66567ee-29c0-55d9-b31f-8693abe96037",
+      "name": "Normalizar WooCommerce",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        420
+      ],
+      "parameters": {
+        "jsCode": "// Deja los productos de WooCommerce con la misma forma que el resto de fuentes.\nconst cfg = $('Configuración').first().json;\nconst limpiar = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\\s+/g, ' ').trim();\nconst salida = [];\nfor (const item of $input.all()) {\n  const p = item.json;\n  const atributos = {};\n  for (const a of p.attributes || []) {\n    const vals = (a.options || []).filter(Boolean);\n    if (a.name && vals.length) atributos[String(a.name).toLowerCase()] = vals.join(', ');\n  }\n  if (p.weight) atributos.peso = `${p.weight} kg`;\n  const d = p.dimensions || {};\n  if (d.length && d.width) atributos.medidas = `${d.length} × ${d.width}${d.height ? ` × ${d.height}` : ''} cm`;\n  salida.push({ json: {\n    sku: p.sku || String(p.id),\n    id_tienda: p.id,\n    titulo: p.name || '',\n    marca: (p.brands && p.brands[0] && p.brands[0].name) || '',\n    categoria: (p.categories || []).map((c) => c.name).join(', '),\n    precio: p.price != null && p.price !== '' ? parseFloat(p.price) : null,\n    moneda: cfg.moneda || 'EUR',\n    stock: p.stock_quantity ?? null,\n    url: p.permalink || '',\n    descripcion: limpiar(p.description || p.short_description),\n    atributos,\n  } });\n}\nif (!salida.length) throw new Error('WooCommerce no devolvió productos: revisa la credencial y que haya catálogo');\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "d9575eee-7fc5-58b0-8e93-5ef5b339624d",
+      "name": "Preparar productos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Filtra el catálogo, aplica el tope por ejecución y deja un producto por item,\n// con los \"hechos\" que luego sirven para comprobar que la ficha no se inventa nada.\nconst cfg = $('Configuración').first().json;\nconst productos = $input.all().map((i) => i.json).filter((p) => p && p.sku && p.titulo);\nif (!productos.length) throw new Error('No llegó ningún producto con referencia y título');\n\nconst corta = (p) => String(p.descripcion || '').replace(/<[^>]*>/g, '').trim().length < cfg.descripcion_corta;\nconst candidatos = cfg.solo_sin_descripcion ? productos.filter(corta) : productos;\nconst total = productos.length;\nconst elegidos = candidatos.slice(0, cfg.max_productos);\n\nif (!elegidos.length) {\n  return [{ json: { sin_trabajo: true, total_catalogo: total, candidatos: 0, motor: cfg.motor, ficha: null } }];\n}\n\nconst textoAtributos = (p) => Object.entries(p.atributos || {})\n  .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('; ');\n\nconst TONOS = {\n  es: {\n    cercano: 'cercano y claro, de tú, sin exagerar',\n    tecnico: 'preciso y técnico, centrado en datos y materiales',\n    premium: 'sobrio y cuidado, con vocabulario de producto de gama alta, sin florituras',\n  },\n  en: {\n    cercano: 'friendly and plain, second person, no hype',\n    tecnico: 'precise and technical, focused on specs and materials',\n    premium: 'restrained and refined, high-end product vocabulary, no fluff',\n  },\n};\n\nreturn elegidos.map((p) => {\n  const hechos = [\n    `Referencia: ${p.sku}`,\n    `Nombre: ${p.titulo}`,\n    p.marca ? `Marca: ${p.marca}` : '',\n    p.categoria ? `Categoría: ${p.categoria}` : '',\n    p.precio != null ? `Precio: ${p.precio} ${p.moneda || 'EUR'}` : '',\n    textoAtributos(p) ? `Características: ${textoAtributos(p)}` : '',\n    p.descripcion ? `Texto actual: ${p.descripcion}` : '',\n  ].filter(Boolean).join('\\n');\n\n  const instrucciones = cfg.idioma === 'en'\n    ? `You write product copy for the online shop \"${cfg.tienda}\". Tone: ${TONOS.en[cfg.tono]}.`\n    : `Escribes fichas de producto para la tienda online \"${cfg.tienda}\". Tono: ${TONOS.es[cfg.tono]}.`;\n  const reglas = cfg.idioma === 'en'\n    ? `Use ONLY the facts given. Never invent measurements, materials, certifications, guarantees or shipping claims. If a fact is missing, leave it out.`\n    : `Usa SOLO los datos que te doy. No inventes medidas, materiales, certificados, garantías ni plazos de envío. Si un dato no está, no lo menciones.`;\n  const formato = `Devuelve solo un objeto JSON con estas claves: titulo_seo (máx ${cfg.largo_titulo} caracteres), meta_descripcion (máx ${cfg.largo_meta}), bullets (array de 3 a 5 frases cortas), descripcion_html (2 párrafos <p> y una lista <ul><li>), keywords (array de 4 a 8), alt_imagen (una frase).`;\n\n  return { json: {\n    sku: p.sku,\n    motor: cfg.motor,\n    modelo: cfg.modelo,\n    producto: p,\n    hechos,\n    total_catalogo: total,\n    candidatos: candidatos.length,\n    prompt_sistema: `${instrucciones}\\n${reglas}\\n${formato}`,\n    prompt_usuario: hechos + (cfg.palabras_clave_extra.length ? `\\nPalabras clave a incluir si encajan: ${cfg.palabras_clave_extra.join(', ')}` : ''),\n  } };\n});\n"
+      }
+    },
+    {
+      "id": "cc8ef738-0b97-5849-83d0-1cdcd81fd5f5",
+      "name": "¿Hay productos pendientes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "ce4cebf9-70b8-53a7-b27a-cc8ebf9ae491",
+              "leftValue": "={{ $json.sin_trabajo !== true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1702d587-8790-5d62-bdfc-b9fb30e297c2",
+      "name": "¿Con qué motor escribo?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1600,
+        0
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.motor }}",
+                    "rightValue": "plantilla",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "plantilla"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.motor }}",
+                    "rightValue": "openai",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "openai"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "823298ac-9a47-5009-8b6a-cc93c59c3b4a",
+      "name": "Escribir fichas (plantilla)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "// Motor \"plantilla\": escribe la ficha a partir de los datos del producto, sin llamar a ninguna API.\n// Es determinista (misma entrada, misma salida) y por construcción no inventa nada.\nconst cfg = $('Configuración').first().json;\n\nconst PRIORIDAD = ['material', 'capacidad', 'medidas', 'dimensiones', 'diametro', 'altura', 'longitud',\n  'potencia', 'bateria', 'autonomia', 'bluetooth', 'cancelacion', 'resistencia', 'impermeabilidad',\n  'color', 'tallas', 'unidades', 'piezas', 'paginas', 'papel', 'peso', 'certificado', 'garantia'];\n\n// Las claves llegan sin tildes (vienen de CSV o de la tienda); aquí se escriben bien.\nconst ETIQUETAS = {\n  es: { material: 'Material', capacidad: 'Capacidad', medidas: 'Medidas', dimensiones: 'Dimensiones',\n    diametro: 'Diámetro', altura: 'Altura', longitud: 'Longitud', potencia: 'Potencia', bateria: 'Batería',\n    autonomia: 'Autonomía', bluetooth: 'Bluetooth', cancelacion: 'Cancelación de ruido', resistencia: 'Resistencia',\n    impermeabilidad: 'Impermeabilidad', color: 'Color', tallas: 'Tallas', unidades: 'Unidades', piezas: 'Piezas',\n    paginas: 'Páginas', papel: 'Papel', peso: 'Peso', certificado: 'Certificado', garantia: 'Garantía',\n    mantiene_frio: 'Mantiene el frío', mantiene_calor: 'Mantiene el calor', portatil: 'Portátil',\n    induccion: 'Inducción', mango: 'Mango', temperatura: 'Temperatura', encuadernacion: 'Encuadernación',\n    rayado: 'Rayado', cierre: 'Cierre', reverso: 'Reverso', recambio: 'Recambio', acabado: 'Acabado',\n    apta: 'Apta para', lavado: 'Lavado', carga: 'Carga', puertos: 'Puertos', tecnologia: 'Tecnología',\n    grosor: 'Grosor', superficie: 'Superficie', duracion: 'Duración', aroma: 'Aroma', mecha: 'Mecha',\n    cera: 'Cera', recipiente: 'Recipiente', ruido: 'Ruido', apagado: 'Apagado', luz: 'Luz', bolsa: 'Bolsa',\n    resistencias: 'Resistencias', afilado: 'Afilado', interruptor: 'Interruptor', cabina: 'Cabina',\n    antiadherente: 'Antiadherente', etiquetas: 'Etiquetas', datos: 'Datos', plegable: 'Plegable' },\n  en: {},\n};\nconst etiqueta = (k, idioma) => (ETIQUETAS[idioma] || {})[k]\n  || String(k).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());\n\nconst T = {\n  es: {\n    intro: {\n      cercano: [\n        (p) => `${p.titulo}${p.marca ? ` de ${p.marca}` : ''}, para el día a día.`,\n        (p) => `${p.titulo}: lo justo, bien hecho${p.marca ? `, de ${p.marca}` : ''}.`,\n        (p) => `Esto es ${p.titulo.toLowerCase()}${p.marca ? ` de ${p.marca}` : ''}, sin más vueltas.`,\n      ],\n      tecnico: [\n        (p) => `${p.titulo}${p.marca ? ` (${p.marca})` : ''}: ficha técnica y características.`,\n        (p) => `Características de ${p.titulo.toLowerCase()}${p.marca ? `, ${p.marca}` : ''}.`,\n        (p) => `${p.titulo}. Estos son los datos que importan antes de decidir.`,\n      ],\n      premium: [\n        (p) => `${p.titulo}${p.marca ? ` de ${p.marca}` : ''}. Materiales escogidos y acabado cuidado.`,\n        (p) => `${p.titulo}: la versión sobria${p.marca ? `, firmada por ${p.marca}` : ''}.`,\n        (p) => `${p.titulo}. Pocas piezas, bien resueltas.`,\n      ],\n    },\n    cierre: {\n      cercano: [\n        () => `Una compra para años, no para una temporada.`,\n        () => `Sencillo de usar y fácil de mantener.`,\n        () => `De esas cosas que se compran una vez.`,\n      ],\n      tecnico: [\n        () => `Consulta las características antes de comprar para asegurarte de que encaja con tu uso.`,\n        () => `Todos los datos de arriba vienen de la ficha del fabricante.`,\n        () => `Si necesitas una medida concreta, la tienes en la lista.`,\n      ],\n      premium: [\n        () => `Una pieza pensada para quedarse, no para reemplazarse cada temporada.`,\n        () => `El tipo de objeto que mejora con el uso.`,\n        () => `Sin adornos: materiales, proporción y oficio.`,\n      ],\n    },\n    cadaUno: 'Características',\n    conector: 'con',\n  },\n  en: {\n    intro: {\n      cercano: [\n        (p) => `${p.titulo}${p.marca ? ` by ${p.marca}` : ''}, made for everyday use.`,\n        (p) => `${p.titulo}: the essentials, done properly${p.marca ? `, by ${p.marca}` : ''}.`,\n        (p) => `This is ${p.titulo.toLowerCase()}${p.marca ? ` by ${p.marca}` : ''}, nothing more.`,\n      ],\n      tecnico: [\n        (p) => `${p.titulo}${p.marca ? ` (${p.marca})` : ''}: specs and key features.`,\n        (p) => `Specifications for ${p.titulo.toLowerCase()}${p.marca ? `, ${p.marca}` : ''}.`,\n        (p) => `${p.titulo}. The numbers that matter before you decide.`,\n      ],\n      premium: [\n        (p) => `${p.titulo}${p.marca ? ` by ${p.marca}` : ''}. Considered materials, careful finish.`,\n        (p) => `${p.titulo}: the restrained version${p.marca ? `, signed by ${p.marca}` : ''}.`,\n        (p) => `${p.titulo}. Few parts, all of them resolved.`,\n      ],\n    },\n    cierre: {\n      cercano: [\n        () => `Something to keep for years, not for one season.`,\n        () => `Easy to use, easy to look after.`,\n        () => `One of those things you buy once.`,\n      ],\n      tecnico: [\n        () => `Check the specs above to make sure it fits your use case.`,\n        () => `Every figure above comes from the manufacturer's sheet.`,\n        () => `If you need an exact measurement, it is in the list.`,\n      ],\n      premium: [\n        () => `Built to stay, not to be replaced every season.`,\n        () => `The kind of object that improves with use.`,\n        () => `No decoration: materials, proportion and craft.`,\n      ],\n    },\n    cadaUno: 'Features',\n    conector: 'with',\n  },\n};\n\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst mayus = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);\n// Une piezas mientras quepan: así nunca se corta un valor por la mitad\n// (un \"2,4 kg\" recortado en \"2.\" sería un dato falso en la ficha).\nconst unir = (primera, piezas, sep, max) => {\n  let out = String(primera).trim();\n  for (const pieza of piezas) {\n    const cand = `${out}${sep}${String(pieza).trim()}`;\n    if (cand.length <= max) out = cand;\n  }\n  return out;\n};\n// corta por palabra entera y sin dejar signos colgando\nconst recortar = (s, max) => {\n  const t = String(s).replace(/\\s+/g, ' ').trim();\n  if (t.length <= max) return t;\n  const cortado = t.slice(0, max + 1);\n  const hasta = cortado.lastIndexOf(' ');\n  return (hasta > max * 0.5 ? cortado.slice(0, hasta) : t.slice(0, max)).replace(/[\\s,;:.·|-]+$/, '');\n};\n\nconst salida = [];\nfor (const item of $input.all()) {\n  const d = item.json;\n  if (d.sin_trabajo) { salida.push({ json: d }); continue; }\n  const p = d.producto;\n  const L = T[cfg.idioma] || T.es;\n  const attrs = Object.entries(p.atributos || {});\n  attrs.sort((a, b) => {\n    const ia = PRIORIDAD.indexOf(a[0]); const ib = PRIORIDAD.indexOf(b[0]);\n    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);\n  });\n  const bullets = attrs.slice(0, 5).map(([k, v]) => `${etiqueta(k, cfg.idioma)}: ${v}`);\n  const primeraOpcion = (v) => String(v).split(/,\\s+/)[0].trim();   // \"S, M, L\" -> \"S\"; \"2,4 kg\" intacto\n  const destacado = attrs.length ? primeraOpcion(attrs[0][1]) : '';\n\n  const sinTildes = (s) => String(s).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\n  const yaEsta = destacado && sinTildes(destacado).split(/\\s+/).filter((w) => w.length > 3)\n    .some((w) => sinTildes(p.titulo).includes(w));\n  const titulo_seo = unir(recortar(p.titulo, cfg.largo_titulo),\n    [!yaEsta && destacado && destacado.length <= 22 ? destacado : '', p.marca].filter(Boolean),\n    ' · ', cfg.largo_titulo);\n  const rasgos = attrs.slice(0, 3).map(([, v]) => primeraOpcion(v)).filter(Boolean);\n  const cabeza = recortar(`${p.titulo}${p.marca ? ` de ${p.marca}` : ''}`, cfg.largo_meta - 1);\n  let meta = cabeza;\n  rasgos.forEach((rasgo, i) => {\n    const cand = `${meta}${i === 0 ? ': ' : ', '}${rasgo}`;\n    if (cand.length + 1 <= cfg.largo_meta) meta = cand;\n  });\n  meta += '.';\n\n  const semilla = [...String(p.sku)].reduce((a, c) => a + c.charCodeAt(0), 0);\n  const intro = L.intro[cfg.tono][semilla % L.intro[cfg.tono].length](p);\n  const cierre = L.cierre[cfg.tono][semilla % L.cierre[cfg.tono].length](p);\n  const descripcion_html = `<p>${esc(intro)}</p>\\n<ul>\\n${bullets.map((b) => `  <li>${esc(b)}</li>`).join('\\n')}\\n</ul>\\n<p>${esc(cierre)}</p>`;\n\n  const palabras = `${p.titulo} ${p.categoria} ${p.marca}`.toLowerCase()\n    .normalize('NFD').replace(/[̀-ͯ]/g, '')\n    .split(/[^a-z0-9]+/).filter((w) => w.length > 3);\n  const frases = [p.titulo, p.categoria, p.marca && p.categoria ? `${p.categoria} ${p.marca}` : '']\n    .filter(Boolean).map((s) => String(s).toLowerCase());\n  const keywords = [...new Set([...frases, ...palabras, ...cfg.palabras_clave_extra.map((k) => String(k).toLowerCase())])].slice(0, 8);\n  const alt_imagen = recortar([p.titulo, p.marca, p.atributos && p.atributos.color].filter(Boolean).join(', '), 120);\n\n  salida.push({ json: { ...d, motor: 'plantilla', ficha: {\n    sku: p.sku, titulo_seo, meta_descripcion: meta, bullets, descripcion_html, keywords, alt_imagen,\n  } } });\n}\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "9e06e3fa-49b8-574f-8d29-42b97168e0a2",
+      "name": "Pedir la ficha a la IA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1840,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $json.modelo, temperature: 0.4, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: $json.prompt_sistema }, { role: 'user', content: $json.prompt_usuario }] }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "95ecdf35-972e-59f9-928a-c8b4599619a9",
+      "name": "Leer respuesta de la IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2060,
+        120
+      ],
+      "parameters": {
+        "jsCode": "// Convierte la respuesta de la API en una ficha con la misma forma que la del motor \"plantilla\".\n// Si una respuesta viene rota, ese producto se marca y el resto sigue: nunca tumba la ejecución.\nconst cfg = $('Configuración').first().json;\nconst preparados = $('Preparar productos').all().map((i) => i.json);\nconst entradas = $input.all();\n\nconst texto = (r) => {\n  if (typeof r === 'string') return r;\n  if (r?.choices?.[0]?.message?.content) return r.choices[0].message.content;\n  if (r?.message?.content) return r.message.content;\n  if (r?.content) return typeof r.content === 'string' ? r.content : (r.content[0]?.text || '');\n  return '';\n};\nconst extraerJson = (s) => {\n  const limpio = String(s).replace(/^\\s*```(?:json)?/i, '').replace(/```\\s*$/, '').trim();\n  try { return JSON.parse(limpio); } catch (_) { /* sigue */ }\n  const ini = limpio.indexOf('{');\n  const fin = limpio.lastIndexOf('}');\n  if (ini >= 0 && fin > ini) {\n    try { return JSON.parse(limpio.slice(ini, fin + 1)); } catch (_) { /* sigue */ }\n  }\n  return null;\n};\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst salida = [];\nentradas.forEach((item, i) => {\n  const base = preparados[i] || preparados[0] || {};\n  if (base.sin_trabajo) { salida.push({ json: base }); return; }\n  const p = base.producto || {};\n  // Si la API respondió con un error (clave no válida, sin saldo, límite de uso…), se dice tal cual.\n  const errorApi = item.json && (item.json.error || item.json.errorMessage);\n  if (errorApi) {\n    const msg = typeof errorApi === 'object' ? (errorApi.description || errorApi.message || JSON.stringify(errorApi)) : String(errorApi);\n    salida.push({ json: { ...base, motor: cfg.motor, ficha: null,\n      fallo: `La API de IA devolvió un error para ${p.sku || base.sku}: ${msg.slice(0, 160)}` } });\n    return;\n  }\n  const crudo = texto(item.json);\n  const j = extraerJson(crudo);\n  if (!j || !j.titulo_seo) {\n    salida.push({ json: { ...base, motor: cfg.motor, ficha: null,\n      fallo: `La respuesta de la API no traía un JSON válido para ${p.sku || base.sku}` } });\n    return;\n  }\n  const lista = (v) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : String(v || '')\n    .split(/\\n|;|•/).map((x) => x.replace(/^[-*\\s]+/, '').trim()).filter(Boolean));\n  const bullets = lista(j.bullets).slice(0, 5);\n  const html = String(j.descripcion_html || '').trim()\n    || `<p>${esc(j.resumen || j.meta_descripcion || '')}</p>\\n<ul>\\n${bullets.map((b) => `  <li>${esc(b)}</li>`).join('\\n')}\\n</ul>`;\n  salida.push({ json: { ...base, motor: cfg.motor, ficha: {\n    sku: p.sku || base.sku,\n    titulo_seo: String(j.titulo_seo).trim(),\n    meta_descripcion: String(j.meta_descripcion || j.meta || '').trim(),\n    bullets,\n    descripcion_html: html,\n    keywords: lista(j.keywords).slice(0, 8),\n    alt_imagen: String(j.alt_imagen || j.alt || '').trim(),\n  } } });\n});\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "090f8fe5-cc67-592f-89a8-e0837d4e6f5a",
+      "name": "Revisar y montar CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Revisa las fichas, monta el CSV para importar en la tienda y el email de resumen.\nconst cfg = $('Configuración').first().json;\nconst items = $input.all().map((i) => i.json).filter(Boolean);\n\nconst vacio = items.length === 1 && items[0].sin_trabajo;\nconst TAGS_OK = /^(p|ul|ol|li|br|strong|em|h2|h3)$/i;\n\nconst numeros = (s) => (String(s).match(/\\d+(?:[.,]\\d+)?/g) || []).map((n) => n.replace(',', '.'));\n\nconst revisadas = [];\nconst fallos = [];\nfor (const it of items) {\n  if (it.sin_trabajo) continue;\n  if (!it.ficha) { fallos.push(it.fallo || `Sin ficha para ${it.sku}`); continue; }\n  const f = it.ficha;\n  const avisos = [];\n\n  if (f.titulo_seo.length > cfg.largo_titulo) avisos.push(`título de ${f.titulo_seo.length} caracteres (máx ${cfg.largo_titulo})`);\n  if (!f.meta_descripcion) avisos.push('sin meta descripción');\n  else if (f.meta_descripcion.length > cfg.largo_meta) avisos.push(`meta de ${f.meta_descripcion.length} caracteres (máx ${cfg.largo_meta})`);\n  if (f.bullets.length < 3) avisos.push(`solo ${f.bullets.length} características`);\n  if (!f.alt_imagen) avisos.push('sin texto alternativo de imagen');\n  if (f.keywords.length < 3) avisos.push('menos de 3 palabras clave');\n\n  const etiquetasRaras = [...new Set((f.descripcion_html.match(/<\\/?([a-z0-9]+)/gi) || [])\n    .map((t) => t.replace(/[<\\/]/g, '')).filter((t) => !TAGS_OK.test(t)))];\n  if (etiquetasRaras.length) avisos.push(`etiquetas HTML no permitidas: ${etiquetasRaras.join(', ')}`);\n\n  // Ningún número puede aparecer en la ficha si no estaba en los datos del producto:\n  // es la comprobación que impide que el texto se invente medidas, garantías o plazos.\n  const enDatos = new Set(numeros(it.hechos));\n  const generado = [f.titulo_seo, f.meta_descripcion, ...f.bullets, f.descripcion_html.replace(/<[^>]*>/g, ' '), f.alt_imagen].join(' ');\n  const inventados = [...new Set(numeros(generado))].filter((n) => !enDatos.has(n));\n  if (inventados.length) avisos.push(`datos sin respaldo en el producto: ${inventados.join(', ')}`);\n\n  if (/lorem|ipsum|\\bTODO\\b|XXX|\\[[^\\]]*\\]/i.test(generado)) avisos.push('texto de relleno sin sustituir');\n\n  revisadas.push({ ...f, url: it.producto?.url || '', avisos, revisar: avisos.length > 0 });\n}\n\nconst total = items[0]?.total_catalogo ?? revisadas.length;\nconst candidatos = items[0]?.candidatos ?? revisadas.length;\nconst conAviso = revisadas.filter((f) => f.revisar);\n\n// ---- CSV para importar en la tienda ----\nconst COLS = ['sku', 'titulo_seo', 'meta_descripcion', 'descripcion_html', 'bullets', 'keywords', 'alt_imagen', 'avisos'];\nconst celda = (v) => {\n  // sin saltos de línea dentro de las celdas: hay importadores de tienda que los parten mal\n  const s = (Array.isArray(v) ? v.join(' | ') : String(v ?? '')).replace(/\\r?\\n\\s*/g, ' ').trim();\n  return /[\";]/.test(s) ? `\"${s.replace(/\"/g, '\"\"')}\"` : s;\n};\nconst csv = [COLS.join(';'), ...revisadas.map((f) => COLS.map((c) => celda(f[c])).join(';'))].join('\\n');\n\n// ---- Email ----\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst VERDE = '#235b54'; const TINTA = '#35322c'; const SUAVE = '#6e6a61';\nconst REGLA = '#e7e4dc'; const PAPEL = '#f4f3ef'; const ALERTA = '#8f2f24';\nconst h3 = (t) => `<h3 style=\"font-family:Georgia,'Times New Roman',serif;font-size:17px;color:${VERDE};margin:24px 0 8px;font-weight:normal\">${t}</h3>`;\nconst th = (t, der) => `<th align=\"${der ? 'right' : 'left'}\" style=\"font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:${SUAVE};border-bottom:1px solid ${REGLA};padding:6px 0;font-weight:normal\">${t}</th>`;\nconst td = (t, der) => `<td align=\"${der ? 'right' : 'left'}\" style=\"font-size:13px;color:${TINTA};border-bottom:1px solid ${REGLA};padding:8px 0\">${t}</td>`;\n\nconst filas = revisadas.slice(0, 12).map((f) => `<tr>${td(esc(f.sku))}${td(esc(f.titulo_seo))}${td(\n  f.revisar ? `<span style=\"color:${ALERTA}\">revisar</span>` : 'lista', 1)}</tr>`).join('');\nconst muestra = revisadas[0];\nconst cifra = (n, t) => `<td width=\"33%\" style=\"padding:0 8px\"><div style=\"font-family:Georgia,serif;font-size:30px;color:${VERDE};line-height:1\">${n}</div><div style=\"font-size:12px;color:${SUAVE};padding-top:2px\">${t}</div></td>`;\n\nconst cuerpo = vacio\n  ? `<p style=\"font-size:15px;color:${TINTA};margin:0\">No había ningún producto pendiente de ficha: los ${total} del catálogo ya tienen descripción.</p>`\n  : `<table width=\"100%\" cellspacing=\"0\" style=\"margin:4px 0 8px\"><tr>\n${cifra(revisadas.length, 'fichas escritas')}${cifra(conAviso.length, 'para revisar')}${cifra(`${candidatos}/${total}`, 'pendientes del catálogo')}\n</tr></table>\n${h3('Fichas generadas')}\n<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>${th('Ref.')}${th('Título SEO')}${th('Estado', 1)}</tr>${filas}</table>\n${revisadas.length > 12 ? `<p style=\"font-size:12px;color:${SUAVE};margin:8px 0 0\">…y ${revisadas.length - 12} más en el CSV adjunto.</p>` : ''}\n${muestra ? `${h3('Así queda una ficha')}\n<div style=\"border:1px solid ${REGLA};border-radius:10px;padding:16px;background:#fff\">\n<div style=\"font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:${SUAVE}\">${esc(muestra.sku)}</div>\n<div style=\"font-family:Georgia,serif;font-size:18px;color:${TINTA};margin:4px 0 6px\">${esc(muestra.titulo_seo)}</div>\n<div style=\"font-size:13px;color:${SUAVE};margin-bottom:10px\">${esc(muestra.meta_descripcion)}</div>\n<div style=\"font-size:13px;color:${TINTA}\">${muestra.descripcion_html}</div>\n</div>` : ''}\n${conAviso.length ? `${h3('⚠️ Repasa antes de publicar')}\n<ul style=\"font-size:13px;color:${TINTA};padding-left:18px;margin:0\">${conAviso.slice(0, 8).map((f) => `<li style=\"margin-bottom:4px\"><b>${esc(f.sku)}</b>: ${esc(f.avisos.join('; '))}</li>`).join('')}</ul>` : ''}\n${fallos.length ? `<p style=\"font-size:13px;color:${ALERTA};margin-top:16px\">${fallos.length} producto(s) sin ficha: ${esc(fallos.slice(0, 3).join(' · '))}</p>` : ''}\n<p style=\"font-size:13px;color:${SUAVE};margin-top:20px\">El CSV adjunto se importa tal cual en la tienda. Las fichas marcadas como «revisar» llevan el motivo en la última columna.</p>`;\n\nconst email_html = `<!doctype html><html><body style=\"margin:0;background:${PAPEL};font-family:Arial,Helvetica,sans-serif;color:${TINTA}\">\n<table width=\"100%\" cellspacing=\"0\"><tr><td align=\"center\" style=\"padding:24px\">\n<table width=\"680\" cellspacing=\"0\" style=\"background:#fff;border-radius:12px\"><tr><td style=\"padding:28px\">\n<div style=\"font-family:Georgia,'Times New Roman',serif;font-size:22px;color:${VERDE}\">Fichas de producto · ${esc(cfg.tienda)}</div>\n<div style=\"font-size:12px;color:${SUAVE};padding:2px 0 12px;border-bottom:1px solid ${REGLA}\">${new Date(cfg.generado_en).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })} · motor: ${esc(items.find((i) => i.motor)?.motor || cfg.motor)}</div>\n${cuerpo}\n<div style=\"border-top:1px solid ${REGLA};margin-top:24px;padding-top:12px;font-size:11px;color:${SUAVE}\">Denoro Automations</div>\n</td></tr></table></td></tr></table></body></html>`;\n\nconst telegram = vacio\n  ? `✅ <b>Fichas de producto</b>\\nNada pendiente: los ${total} productos ya tienen descripción.`\n  : `✅ <b>Fichas de producto · ${cfg.tienda}</b>\\n` +\n    `<b>Escritas:</b> ${revisadas.length}\\n<b>Para revisar:</b> ${conAviso.length}\\n` +\n    `<b>Pendientes del catálogo:</b> ${candidatos} de ${total}` +\n    (fallos.length ? `\\n⚠️ ${fallos.length} sin ficha` : '');\n\nconst nombre = `fichas-${new Date(cfg.generado_en).toISOString().slice(0, 10)}.csv`;\nreturn [{\n  json: {\n    ...cfg,\n    asunto: vacio\n      ? `Denoro · ${cfg.tienda}: nada pendiente de ficha`\n      : `Denoro · ${revisadas.length} fichas para ${cfg.tienda}${conAviso.length ? ` (${conAviso.length} a revisar)` : ''}`,\n    email_html, telegram,\n    resumen: { escritas: revisadas.length, con_aviso: conAviso.length, sin_ficha: fallos.length, catalogo: total, candidatos },\n    fichas: revisadas,\n  },\n  binary: vacio ? {} : { fichas: {\n    data: Buffer.from('﻿' + csv, 'utf8').toString('base64'),\n    mimeType: 'text/csv', fileName: nombre, fileExtension: 'csv',\n  } },\n}];\n"
+      }
+    },
+    {
+      "id": "8c1f0399-2abc-5399-ab8e-7341041df5f7",
+      "name": "¿Email activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2520,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b319bf17-3595-51f2-8aa5-61f3e3dac097",
+              "leftValue": "={{ $json.enviar_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "93e7d4e1-5781-59c8-af22-a0a4c2649917",
+      "name": "¿Telegram activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2520,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1f43ecc1-b8b8-5160-9d2d-7d0a748787a5",
+              "leftValue": "={{ $json.enviar_telegram }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0359d3e7-09f0-57cf-bf62-75fddd9c0b7e",
+      "name": "Enviar email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2760,
+        0
+      ],
+      "parameters": {
+        "fromEmail": "={{ $json.email_from }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false,
+          "attachments": "fichas"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "36cbbf4d-9c16-559f-944c-e954e407fd87",
+      "name": "Enviar a Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2760,
+        220
+      ],
+      "parameters": {
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "text": "={{ $json.telegram }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "1d255aa7-c248-5d29-b30d-ba6547eff36c",
+      "name": "Al ejecutar para un cliente",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -20,
+        100
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "6a96db82-1e88-5186-8159-8a8d7cdfaf2f",
+      "name": "Resultado para el panel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2520,
+        360
+      ],
+      "parameters": {
+        "jsCode": "// (Se añade a cada automatización en su versión «para un cliente»)\n// Guarda en denoro_estado lo que ha pasado en esta ejecución, para enseñarlo en el panel.\nconst d = $input.first()?.json || {};\nconst cfg = $('Configuración').first().json;\nconst txt = (s) => String(s || '').replace(/<br\\s*\\/?>/gi, '\\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\nconst titulo = txt(d.asunto).replace(/^[^\\p{L}\\p{N}]*Denoro · /u, '').replace(/^[^\\p{L}\\p{N}]+/u, '');\nreturn [{ json: {\n  clave: cfg.__clave, token: cfg.__token, snapshot: '',\n  resumen: JSON.stringify({\n    ultima: new Date().toISOString(), ok: true, modo: cfg.modo || null,\n    titulo: (titulo || \"Sin productos pendientes\").slice(0, 200),\n    texto: txt(d.telegram).slice(0, 1500),\n    avisado: Boolean(d.asunto && (d.enviar_email || d.enviar_telegram)),\n    demo: [cfg.fuente, cfg.destino].includes('demo'),\n  }),\n} }];\n"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "c4ffa6cf-8898-50ad-bd66-086f63987a71",
+      "name": "Guardar resultado",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2740,
+        360
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__TABLE_ESTADO__",
+          "cachedResultName": "denoro_estado"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "clave",
+              "condition": "eq",
+              "keyValue": "={{ $json.clave }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    }
+  ],
+  "connections": {
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "¿De dónde saco el catálogo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿De dónde saco el catálogo?": {
+      "main": [
+        [
+          {
+            "node": "Catálogo de ejemplo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Descargar CSV",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Productos Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Productos WooCommerce",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar CSV": {
+      "main": [
+        [
+          {
+            "node": "Leer CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Productos Shopify": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Productos WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Normalizar WooCommerce",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catálogo de ejemplo": {
+      "main": [
+        [
+          {
+            "node": "Preparar productos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer CSV": {
+      "main": [
+        [
+          {
+            "node": "Preparar productos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Shopify": {
+      "main": [
+        [
+          {
+            "node": "Preparar productos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Preparar productos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar productos": {
+      "main": [
+        [
+          {
+            "node": "¿Hay productos pendientes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay productos pendientes?": {
+      "main": [
+        [
+          {
+            "node": "¿Con qué motor escribo?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisar y montar CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Con qué motor escribo?": {
+      "main": [
+        [
+          {
+            "node": "Escribir fichas (plantilla)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pedir la ficha a la IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedir la ficha a la IA": {
+      "main": [
+        [
+          {
+            "node": "Leer respuesta de la IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escribir fichas (plantilla)": {
+      "main": [
+        [
+          {
+            "node": "Revisar y montar CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer respuesta de la IA": {
+      "main": [
+        [
+          {
+            "node": "Revisar y montar CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revisar y montar CSV": {
+      "main": [
+        [
+          {
+            "node": "¿Email activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Telegram activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resultado para el panel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Email activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Telegram activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Al ejecutar para un cliente": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado para el panel": {
+      "main": [
+        [
+          {
+            "node": "Guardar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "Europe/Madrid",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "__WORKFLOW_ERRORES__"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

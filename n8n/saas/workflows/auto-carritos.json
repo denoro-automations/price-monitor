@@ -1,0 +1,751 @@
+{
+  "name": "Denoro SaaS — Carritos abandonados",
+  "nodes": [
+    {
+      "id": "37515c99-de3d-5095-82ce-8d8837f06061",
+      "name": "Nota: cómo usarlo",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        -360
+      ],
+      "parameters": {
+        "content": "## Carritos abandonados · versión para el panel\nLa lanzan el **panel de Denoro** (botón *Ejecutar ahora*) y el **Planificador de automatizaciones**.\nLos ajustes de cada cliente llegan en la entrada y se mezclan con los valores por defecto del nodo **Configuración**: aquí no hay que editar nada.\n\nSe genera con `n8n/saas/build.py` a partir del workflow original: no lo edites a mano.",
+        "width": 520,
+        "height": 220,
+        "color": 5
+      }
+    },
+    {
+      "id": "4a19d239-7f55-55a4-a4a8-7152e3fc0c3e",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// ============ CONFIGURACIÓN DEL CLIENTE (edita solo este bloque) ============\nconst CONFIG_BASE = {\n  tienda: 'Tienda Demo',\n  web: 'https://tienda-demo.test',\n  fuente: 'demo',                 // 'demo', 'shopify' o 'http'\n  carritos_url: '',               // si fuente = 'http': endpoint que devuelve los carritos en JSON\n  dominio_shopify: '',            // solo Shopify: tu-tienda.myshopify.com\n\n  // --- la secuencia de avisos (se envía como mucho uno por carrito y ejecución) ---\n  pasos: [\n    { horas: 1,  asunto: '¿Te ayudamos a terminar tu pedido?', cupon: '' },\n    { horas: 24, asunto: 'Tu carrito sigue esperándote',       cupon: '' },\n    { horas: 72, asunto: 'Última oportunidad: 10 % en tu carrito', cupon: 'VUELVE10' },\n  ],\n  horas_limite: 168,              // pasada una semana, el carrito se da por perdido\n  minimo_total: 10,               // carritos por debajo de este importe no merecen un email\n  max_envios_por_ejecucion: 50,   // freno: evita una avalancha si algo se descuadra\n\n  // --- consentimiento: escribir a quien no lo dio puede costar una multa ---\n  solo_con_consentimiento: true,  // no dejes esto en false sin hablarlo con el cliente\n  email_bajas: 'bajas@tu-dominio.com',   // dirección de baja que aparece en el pie\n\n  // --- la marca de la TIENDA, que es quien firma el email al comprador ---\n  marca_color: '#235b54',\n  marca_texto_boton: 'Terminar mi pedido',\n\n  moneda: 'EUR',\n  email_from: 'tienda@tu-dominio.com',   // remitente de los avisos al comprador\n  email_to: 'cliente@ejemplo.com',       // a quién le llega el RESUMEN (el dueño de la tienda)\n  telegram_chat_id: 'TU_CHAT_ID',\n};\n// ============================================================================\n\n// ---- Panel único de Denoro: los ajustes del cliente llegan en la entrada ----\nconst __ENTRADA = $input.first().json || {};\nconst __limpio = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, x]) => x !== '' && x !== null && x !== undefined));\nconst __mezclar = (b, o) => {\n  const r = { ...b };\n  for (const [k, v] of Object.entries(o || {})) {\n    if (v && typeof v === 'object' && !Array.isArray(v) && b[k] && typeof b[k] === 'object' && !Array.isArray(b[k])) r[k] = { ...b[k], ...__limpio(v) };\n    else if (v !== undefined && v !== null) r[k] = v;\n  }\n  return r;\n};\nconst CONFIG = { ...__mezclar(CONFIG_BASE, __ENTRADA.config), __token: String(__ENTRADA.token || ''), __auto: String(__ENTRADA.auto || ''), __clave: String(__ENTRADA.clave || '') };\nif (!CONFIG.__token || !CONFIG.__clave) throw new Error('Esta versión se lanza desde el panel de Denoro (falta el cliente)');\nif (!['demo', 'shopify', 'http'].includes(CONFIG.fuente)) {\n  throw new Error(`fuente \"${CONFIG.fuente}\" no válida: usa demo, shopify o http`);\n}\nif (CONFIG.fuente === 'http' && !/^https?:\\/\\//i.test(String(CONFIG.carritos_url || ''))) {\n  throw new Error('Con fuente = http hace falta un carritos_url que empiece por http:// o https://');\n}\nif (CONFIG.fuente === 'shopify' && !/\\.myshopify\\.com$/i.test(String(CONFIG.dominio_shopify || ''))) {\n  throw new Error('Con fuente = shopify hace falta dominio_shopify (tu-tienda.myshopify.com)');\n}\nif (!Array.isArray(CONFIG.pasos) || !CONFIG.pasos.length) throw new Error('Define al menos un paso en pasos');\nCONFIG.pasos.forEach((p, i) => {\n  if (!(p.horas >= 0)) throw new Error(`El paso ${i + 1} necesita horas (número de horas desde que se abandonó)`);\n  if (!String(p.asunto || '').trim()) throw new Error(`El paso ${i + 1} necesita asunto`);\n  if (i > 0 && p.horas <= CONFIG.pasos[i - 1].horas) {\n    throw new Error(`Los pasos van de menos a más horas: el ${i + 1} (${p.horas} h) no puede ir antes que el ${i} (${CONFIG.pasos[i - 1].horas} h)`);\n  }\n});\nif (CONFIG.horas_limite <= CONFIG.pasos[CONFIG.pasos.length - 1].horas) {\n  throw new Error('horas_limite tiene que ser mayor que las horas del último paso');\n}\nif (!(CONFIG.max_envios_por_ejecucion >= 1 && CONFIG.max_envios_por_ejecucion <= 500)) {\n  throw new Error('max_envios_por_ejecucion debe estar entre 1 y 500');\n}\nconst PLACEHOLDER = /ejemplo\\.com|tu-dominio|TU_CHAT_ID/i;\nfor (const k of ['email_to', 'email_from', 'telegram_chat_id', 'email_bajas']) {\n  if (PLACEHOLDER.test(String(CONFIG[k] || ''))) {\n    throw new Error(`Configura \"${k}\" en el nodo Configuración (ahora tiene un valor de ejemplo). Déjalo vacío ('') para desactivar ese canal.`);\n  }\n}\nif (!CONFIG.email_from) throw new Error('Falta email_from: sin remitente no se puede escribir a los compradores');\nif (!CONFIG.email_bajas) throw new Error('Falta email_bajas: todo email comercial necesita una forma de darse de baja');\nif (CONFIG.telegram_chat_id && !/^-?\\d+$|^@\\w+$/.test(String(CONFIG.telegram_chat_id))) {\n  throw new Error('telegram_chat_id debe ser un número (p. ej. 123456789) o @canal');\n}\nif (!CONFIG.email_to && !CONFIG.telegram_chat_id) throw new Error('Configura al menos un canal para el resumen: email_to o telegram_chat_id');\n\nreturn [{ json: {\n  ...CONFIG,\n  enviar_email: Boolean(CONFIG.email_to),\n  enviar_telegram: Boolean(CONFIG.telegram_chat_id),\n  ahora: new Date().toISOString(),\n} }];\n"
+      }
+    },
+    {
+      "id": "e5b2757c-e4ad-5d57-905e-936c0f5c3f54",
+      "name": "¿De dónde saco los carritos?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        460,
+        100
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "demo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "demo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "shopify",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "shopify"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "http",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "http"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "50ecbacf-634d-504d-a470-1d365119c899",
+      "name": "Carritos de ejemplo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        -60
+      ],
+      "parameters": {
+        "jsCode": "// Carritos de ejemplo, colocados en el tiempo para que se vean los tres pasos de la secuencia,\n// una recuperación, un carrito sin consentimiento y uno demasiado pequeño.\nconst cfg = $('Configuración').first().json;\nconst ahora = new Date(cfg.ahora).getTime();\nconst hace = (h) => new Date(ahora - h * 3600000).toISOString();\nconst L = (titulo, unidades, precio) => ({ titulo, unidades, precio });\n\nconst C = (id, email, nombre, horas, total, lineas, extra = {}) => ({ json: {\n  id, email, nombre,\n  total, moneda: cfg.moneda,\n  creado_en: hace(horas + 0.5), actualizado_en: hace(horas),\n  completado_en: null, acepta_marketing: true,\n  url_recuperacion: `${cfg.web}/carrito/${id}`,\n  lineas, ...extra,\n} });\n\nreturn [\n  C('C-1001', 'ana@ejemplo.test', 'Ana', 2, 78.90, [L('Botella térmica 750 ml', 1, 24.9), L('Mochila de diario 18 L', 1, 54)]),\n  C('C-1002', 'bruno@ejemplo.test', 'Bruno', 30, 129.00, [L('Lámpara de pie de lectura', 1, 99), L('Taza de cerámica', 2, 15)]),\n  C('C-1003', 'carla@ejemplo.test', 'Carla', 80, 245.00, [L('Mesa auxiliar', 1, 199), L('Vela de soja 220 g', 1, 46)]),\n  C('C-1004', 'diego@ejemplo.test', 'Diego', 26, 64.00, [L('Juego de cuchillos', 1, 64)], { completado_en: hace(1) }),\n  C('C-1005', 'elena@ejemplo.test', 'Elena', 5, 42.00, [L('Cargador de 65 W', 1, 42)], { acepta_marketing: false }),\n  C('C-1006', 'fran@ejemplo.test', 'Fran', 10, 7.90, [L('Cuaderno de bolsillo A6', 1, 7.9)]),\n  C('C-1007', '', 'Invitado', 6, 89.00, [L('Mochila de viaje 32 L', 1, 89)]),\n  C('C-1008', 'gema@ejemplo.test', 'Gema', 200, 55.00, [L('Esterilla de yoga', 1, 54)]),\n];\n"
+      }
+    },
+    {
+      "id": "3f2aa690-487b-58a7-9ff7-d1844c46924e",
+      "name": "Carritos de Shopify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        120
+      ],
+      "parameters": {
+        "url": "=https://{{ $json.dominio_shopify }}/admin/api/2024-10/checkouts.json?limit=250&status=any",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000,
+          "splitIntoItems": true
+        },
+        "sendQuery": false
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "ca02975e-36be-529a-a5d7-9894016a2992",
+      "name": "Normalizar Shopify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        120
+      ],
+      "parameters": {
+        "jsCode": "// Deja los \"abandoned checkouts\" de Shopify con la forma que usa el resto del workflow.\nconst cfg = $('Configuración').first().json;\nconst salida = [];\nfor (const item of $input.all()) {\n  const ch = item.json;\n  if (!ch || !ch.id) continue;\n  const cliente = ch.customer || {};\n  salida.push({ json: {\n    id: String(ch.token || ch.id),\n    email: (ch.email || cliente.email || '').trim().toLowerCase(),\n    nombre: (ch.billing_address?.first_name || cliente.first_name || '').trim(),\n    total: parseFloat(ch.total_price || 0),\n    moneda: ch.currency || cfg.moneda,\n    creado_en: ch.created_at,\n    actualizado_en: ch.updated_at || ch.created_at,\n    completado_en: ch.completed_at || null,\n    // Shopify guarda el consentimiento del comprador en el propio checkout\n    acepta_marketing: Boolean(ch.buyer_accepts_marketing ?? cliente.accepts_marketing),\n    url_recuperacion: ch.abandoned_checkout_url || '',\n    lineas: (ch.line_items || []).map((l) => ({\n      titulo: l.title + (l.variant_title ? ` · ${l.variant_title}` : ''),\n      unidades: l.quantity, precio: parseFloat(l.price || 0),\n    })),\n  } });\n}\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "8d7f9ae4-ea45-5047-bd79-fea67150d456",
+      "name": "Carritos del endpoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "url": "={{ $json.carritos_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "8fd9b079-2f3a-57d4-9f91-8defb1f17356",
+      "name": "Normalizar endpoint",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Carritos desde un endpoint propio (un plugin de WooCommerce, un export de la tienda...).\n// Se admiten varias formas de nombrar lo mismo para no obligar al cliente a cambiar su endpoint.\nconst cfg = $('Configuración').first().json;\nconst primera = $input.first().json;\nconst lista = Array.isArray(primera) ? primera\n  : (primera.carritos || primera.carts || primera.data || primera.items\n    || $input.all().map((i) => i.json));\nif (!Array.isArray(lista)) throw new Error('El endpoint no devolvió una lista de carritos (ni en carritos, carts, data o items)');\n\nconst fecha = (v) => {\n  if (!v) return null;\n  const n = typeof v === 'number' ? v * (String(v).length <= 10 ? 1000 : 1) : Date.parse(v);\n  const d = new Date(n);\n  return Number.isNaN(d.getTime()) ? null : d.toISOString();\n};\nconst salida = [];\nfor (const c of lista) {\n  if (!c) continue;\n  const id = String(c.id ?? c.cart_id ?? c.token ?? c.session_id ?? '').trim();\n  if (!id) continue;\n  const actualizado = fecha(c.actualizado_en ?? c.updated_at ?? c.last_activity ?? c.creado_en ?? c.created_at);\n  if (!actualizado) continue;\n  salida.push({ json: {\n    id,\n    email: String(c.email ?? c.customer_email ?? '').trim().toLowerCase(),\n    nombre: String(c.nombre ?? c.first_name ?? c.customer_name ?? '').trim(),\n    total: parseFloat(c.total ?? c.cart_total ?? 0) || 0,\n    moneda: c.moneda || c.currency || cfg.moneda,\n    creado_en: fecha(c.creado_en ?? c.created_at) || actualizado,\n    actualizado_en: actualizado,\n    completado_en: fecha(c.completado_en ?? c.completed_at ?? c.order_date),\n    acepta_marketing: Boolean(c.acepta_marketing ?? c.accepts_marketing ?? c.marketing_consent),\n    url_recuperacion: c.url_recuperacion || c.recovery_url || c.checkout_url || '',\n    lineas: (c.lineas || c.items || c.line_items || []).map((l) => ({\n      titulo: String(l.titulo ?? l.title ?? l.name ?? 'Producto'),\n      unidades: Number(l.unidades ?? l.quantity ?? 1),\n      precio: parseFloat(l.precio ?? l.price ?? 0) || 0,\n    })),\n  } });\n}\nif (!salida.length) throw new Error('Ningún carrito del endpoint traía id y fecha: revisa el formato');\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "bbd2b1b8-45d2-51d4-88fa-c394f36f33fe",
+      "name": "Decidir a quién escribo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const __estadoCliente = () => { const g = $getWorkflowStaticData('global'); const k = String($('Configuración').first().json.__token || '_'); g.clientes = g.clientes || {}; return (g.clientes[k] = g.clientes[k] || {}); };\n// Decide a quién le toca un aviso ahora mismo, y lleva la cuenta de lo recuperado.\n// El estado vive en el propio workflow (staticData), así que no hace falta base de datos.\nconst cfg = $('Configuración').first().json;\nconst ahora = new Date(cfg.ahora).getTime();\nconst estado = __estadoCliente();\nestado.carritos = estado.carritos || {};\nestado.historico = estado.historico || { enviados: 0, recuperados: 0, valor_recuperado: 0 };\n\nconst carritos = $input.all().map((i) => i.json).filter((c) => c && c.id);\nconst envios = [];\nconst recuperados = [];\nconst omitidos = { sin_email: 0, sin_consentimiento: 0, importe_bajo: 0, caducados: 0, al_dia: 0 };\n\nfor (const c of carritos) {\n  const previo = estado.carritos[c.id];\n  const enviados = (previo && previo.pasos) || [];\n\n  if (c.completado_en) {\n    // Solo se apunta como recuperado si antes le habíamos escrito: si no, es una compra normal.\n    if (enviados.length) {\n      recuperados.push({ id: c.id, email: c.email, nombre: c.nombre, total: c.total,\n        pasos: enviados.length, completado_en: c.completado_en });\n      estado.historico.recuperados += 1;\n      estado.historico.valor_recuperado = Math.round((estado.historico.valor_recuperado + c.total) * 100) / 100;\n    }\n    delete estado.carritos[c.id];\n    continue;\n  }\n\n  const horas = (ahora - Date.parse(c.actualizado_en)) / 3600000;\n  if (!(horas >= 0)) continue;\n  if (horas > cfg.horas_limite) { omitidos.caducados += 1; delete estado.carritos[c.id]; continue; }\n  if (!c.email) { omitidos.sin_email += 1; continue; }\n  if (cfg.solo_con_consentimiento && !c.acepta_marketing) { omitidos.sin_consentimiento += 1; continue; }\n  if (c.total < cfg.minimo_total) { omitidos.importe_bajo += 1; continue; }\n\n  // Pasos que ya tocaban por tiempo. Si hay varios pendientes se manda el último:\n  // a un carrito de hace tres días no se le escribe \"¿te ayudamos a terminar?\".\n  const tocan = cfg.pasos.map((p, i) => (horas >= p.horas ? i + 1 : 0)).filter(Boolean);\n  const pendientes = tocan.filter((p) => !enviados.includes(p));\n  if (!pendientes.length) { omitidos.al_dia += 1; continue; }\n  const paso = pendientes[pendientes.length - 1];\n\n  envios.push({\n    ...c,\n    paso,\n    saltados: pendientes.slice(0, -1),   // los anteriores se dan por pasados, no se enviarán luego\n    asunto: cfg.pasos[paso - 1].asunto,\n    cupon: cfg.pasos[paso - 1].cupon || '',\n    horas_abandonado: Math.round(horas),\n  });\n}\n\n// Los carritos grandes primero: si hay tope, que se aproveche en lo que más vale.\nenvios.sort((a, b) => b.total - a.total);\nconst aEnviar = envios.slice(0, cfg.max_envios_por_ejecucion);\n\nreturn [{ json: {\n  ...cfg,\n  hay_envios: aEnviar.length > 0,\n  envios: aEnviar,\n  en_espera: envios.length - aEnviar.length,\n  recuperados,\n  omitidos,\n  resumen: {\n    carritos_vistos: carritos.length,\n    avisos: aEnviar.length,\n    valor_en_juego: Math.round(aEnviar.reduce((s, e) => s + e.total, 0) * 100) / 100,\n    recuperados: recuperados.length,\n    valor_recuperado: Math.round(recuperados.reduce((s, e) => s + e.total, 0) * 100) / 100,\n    historico: { ...estado.historico },\n  },\n} }];\n"
+      }
+    },
+    {
+      "id": "c7a77f15-c1ec-5eeb-a975-cffdf6d49feb",
+      "name": "¿Hay avisos que mandar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c714666a-6d69-5fdb-9e80-d2edb3bb6ca1",
+              "leftValue": "={{ $json.hay_envios }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4392c1f3-784d-5691-9b11-f3c76aeba939",
+      "name": "Preparar avisos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Un item por aviso, con el email que verá el comprador. Lo firma la TIENDA, no Denoro.\nconst d = $('Decidir a quién escribo').first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst dinero = (n, m) => `${Number(n).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${m === 'EUR' ? '€' : m}`;\nconst COLOR = /^#[0-9a-f]{6}$/i.test(String(d.marca_color)) ? d.marca_color : '#235b54';\nconst TINTA = '#35322c'; const SUAVE = '#6e6a61'; const REGLA = '#e7e4dc'; const PAPEL = '#f4f3ef';\n\nconst SALUDO = {\n  1: (n) => `${n ? `Hola, ${n}` : 'Hola'}: has dejado algo a medias`,\n  2: (n) => `${n ? `${n}, tu` : 'Tu'} carrito sigue guardado`,\n  3: (n) => `${n ? `${n}, ` : ''}última llamada`,\n};\nconst CUERPO = {\n  1: 'Hemos guardado tu carrito por si quieres terminar el pedido. Nada más.',\n  2: 'Seguimos guardándote lo que elegiste. Si algo no te encajaba, contéstanos a este correo y lo miramos.',\n  3: 'Vamos a liberar el carrito en breve. Si lo quieres, este es el momento.',\n};\n\nreturn d.envios.map((c) => {\n  const lineas = c.lineas.map((l) => `<tr>\n<td style=\"padding:8px 0;border-bottom:1px solid ${REGLA};font-size:14px;color:${TINTA}\">${esc(l.titulo)}${l.unidades > 1 ? ` <span style=\"color:${SUAVE}\">× ${l.unidades}</span>` : ''}</td>\n<td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid ${REGLA};font-size:14px;color:${TINTA}\">${dinero(l.precio * l.unidades, c.moneda)}</td></tr>`).join('');\n\n  const cupon = c.cupon ? `<div style=\"border:1px dashed ${COLOR};border-radius:10px;padding:14px;text-align:center;margin:20px 0\">\n<div style=\"font-size:12px;color:${SUAVE};letter-spacing:.06em;text-transform:uppercase\">Código de descuento</div>\n<div style=\"font-family:Georgia,'Times New Roman',serif;font-size:24px;color:${COLOR};padding-top:4px\">${esc(c.cupon)}</div></div>` : '';\n\n  const email_html = `<!doctype html><html><body style=\"margin:0;background:${PAPEL};font-family:Arial,Helvetica,sans-serif;color:${TINTA}\">\n<table width=\"100%\" cellspacing=\"0\"><tr><td align=\"center\" style=\"padding:24px\">\n<table width=\"560\" cellspacing=\"0\" style=\"background:#fff;border-radius:12px\"><tr><td style=\"padding:28px\">\n<div style=\"font-family:Georgia,'Times New Roman',serif;font-size:21px;color:${COLOR};padding-bottom:4px\">${esc(d.tienda)}</div>\n<div style=\"font-family:Georgia,'Times New Roman',serif;font-size:24px;color:${TINTA};padding:8px 0 4px\">${esc(SALUDO[Math.min(c.paso, 3)](c.nombre))}</div>\n<p style=\"font-size:15px;color:${TINTA};line-height:1.5;margin:8px 0 20px\">${CUERPO[Math.min(c.paso, 3)]}</p>\n<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\">${lineas}\n<tr><td style=\"padding:12px 0;font-size:15px\"><b>Total</b></td><td align=\"right\" style=\"padding:12px 0;font-size:15px\"><b>${dinero(c.total, c.moneda)}</b></td></tr></table>\n${cupon}\n<table cellspacing=\"0\" style=\"margin:20px 0\"><tr><td style=\"background:${COLOR};border-radius:8px\">\n<a href=\"${esc(c.url_recuperacion)}\" style=\"display:inline-block;padding:13px 26px;color:#fff;text-decoration:none;font-size:15px\">${esc(d.marca_texto_boton)}</a>\n</td></tr></table>\n<div style=\"border-top:1px solid ${REGLA};margin-top:24px;padding-top:12px;font-size:11px;color:${SUAVE};line-height:1.5\">\n${esc(d.tienda)} · <a href=\"${esc(d.web)}\" style=\"color:${SUAVE}\">${esc(d.web.replace(/^https?:\\/\\//, ''))}</a><br>\nRecibes este aviso porque dejaste un carrito en nuestra tienda y aceptaste recibir comunicaciones.\nPara dejar de recibirlos, escribe a <a href=\"mailto:${esc(d.email_bajas)}\" style=\"color:${SUAVE}\">${esc(d.email_bajas)}</a>.\n</div>\n</td></tr></table></td></tr></table></body></html>`;\n\n  // En modo demo los compradores son inventados: el aviso te llega a ti, con el destinatario en el asunto.\n  const demo = d.fuente === 'demo' && d.email_to;\n  return { json: {\n    ...c,\n    email_to: demo ? d.email_to : c.email,\n    email_from: d.email_from,\n    asunto: demo ? `[Demo → ${c.email}] ${c.asunto}` : c.asunto,\n    email_html,\n  } };\n});\n"
+      }
+    },
+    {
+      "id": "ac684105-a20a-5aef-a5a4-73868659074a",
+      "name": "Avisar al comprador",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1840,
+        0
+      ],
+      "parameters": {
+        "fromEmail": "={{ $json.email_from }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "4416aece-365e-52c6-a81f-bf4fd181e00b",
+      "name": "Recoger envíos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2060,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const __estadoCliente = () => { const g = $getWorkflowStaticData('global'); const k = String($('Configuración').first().json.__token || '_'); g.clientes = g.clientes || {}; return (g.clientes[k] = g.clientes[k] || {}); };\n// Apunta qué avisos salieron de verdad. Solo lo que se envió se marca como enviado:\n// si el SMTP falla, ese carrito volverá a intentarlo en la siguiente pasada.\nconst cfg = $('Configuración').first().json;\nconst previstos = $('Preparar avisos').all().map((i) => i.json);\nconst respuestas = $input.all().map((i) => i.json || {});\nconst estado = __estadoCliente();\nestado.carritos = estado.carritos || {};\nestado.historico = estado.historico || { enviados: 0, recuperados: 0, valor_recuperado: 0 };\n\nconst enviados = [];\nconst fallidos = [];\nprevistos.forEach((p, i) => {\n  const r = respuestas[i] || {};\n  const error = r.error || r.errorMessage;\n  if (error) {\n    fallidos.push({ id: p.id, email: p.email, paso: p.paso,\n      error: String(typeof error === 'object' ? error.message || JSON.stringify(error) : error).slice(0, 200) });\n    return;\n  }\n  const previo = estado.carritos[p.id] || { pasos: [] };\n  const pasos = [...new Set([...previo.pasos, ...(p.saltados || []), p.paso])].sort((a, b) => a - b);\n  estado.carritos[p.id] = { pasos, ultimo_envio: cfg.ahora, total: p.total, email: p.email };\n  estado.historico.enviados += 1;\n  enviados.push({ id: p.id, email: p.email, paso: p.paso, total: p.total });\n});\n\nreturn [{ json: { hubo_envios: true, enviados, fallidos, historico: { ...estado.historico } } }];\n"
+      }
+    },
+    {
+      "id": "26bab5be-0707-5386-861b-f3562f2e4212",
+      "name": "Sin avisos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        220
+      ],
+      "parameters": {
+        "jsCode": "const __estadoCliente = () => { const g = $getWorkflowStaticData('global'); const k = String($('Configuración').first().json.__token || '_'); g.clientes = g.clientes || {}; return (g.clientes[k] = g.clientes[k] || {}); };\n// Rama en la que no había a quién escribir.\nconst estado = __estadoCliente();\nreturn [{ json: { hubo_envios: false, enviados: [], fallidos: [],\n  historico: estado.historico || { enviados: 0, recuperados: 0, valor_recuperado: 0 } } }];\n"
+      }
+    },
+    {
+      "id": "ad4fb665-6218-50a5-8427-751834916465",
+      "name": "Resumen para la tienda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Resumen para el dueño de la tienda: qué se ha enviado, qué se ha recuperado y qué no se tocó.\nconst d = $('Decidir a quién escribo').first().json;\nconst ej = $input.first().json || { hubo_envios: false, enviados: [], fallidos: [], historico: {} };\nconst r = d.resumen;\n\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst VERDE = '#235b54'; const TINTA = '#35322c'; const SUAVE = '#6e6a61';\nconst REGLA = '#e7e4dc'; const PAPEL = '#f4f3ef'; const ALERTA = '#8f2f24'; const OK = '#2c5f3c';\nconst dinero = (n) => `${Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;\nconst h3 = (t) => `<h3 style=\"font-family:Georgia,'Times New Roman',serif;font-size:17px;color:${VERDE};margin:24px 0 8px;font-weight:normal\">${t}</h3>`;\nconst th = (t, der) => `<th align=\"${der ? 'right' : 'left'}\" style=\"font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:${SUAVE};border-bottom:1px solid ${REGLA};padding:6px 0;font-weight:normal\">${t}</th>`;\nconst td = (t, der) => `<td align=\"${der ? 'right' : 'left'}\" style=\"font-size:13px;color:${TINTA};border-bottom:1px solid ${REGLA};padding:8px 0\">${t}</td>`;\nconst cifra = (n, t, color) => `<td width=\"25%\" style=\"padding:0 8px\"><div style=\"font-family:Georgia,serif;font-size:30px;color:${color || VERDE};line-height:1\">${n}</div><div style=\"font-size:12px;color:${SUAVE};padding-top:2px\">${t}</div></td>`;\n\nconst filas = ej.enviados.slice(0, 12).map((e) => `<tr>${td(esc(e.email))}${td(`aviso ${e.paso}`)}${td(dinero(e.total), 1)}</tr>`).join('');\nconst filasRec = d.recuperados.slice(0, 10).map((x) => `<tr>${td(esc(x.email))}${td(`tras ${x.pasos} aviso${x.pasos > 1 ? 's' : ''}`)}${td(dinero(x.total), 1)}</tr>`).join('');\nconst om = d.omitidos;\nconst motivos = [\n  om.sin_consentimiento ? `${om.sin_consentimiento} sin consentimiento` : '',\n  om.sin_email ? `${om.sin_email} sin email` : '',\n  om.importe_bajo ? `${om.importe_bajo} por debajo de ${dinero(d.minimo_total)}` : '',\n  om.caducados ? `${om.caducados} caducados` : '',\n  om.al_dia ? `${om.al_dia} ya al día` : '',\n].filter(Boolean);\n\nconst cuerpo = `<table width=\"100%\" cellspacing=\"0\" style=\"margin:4px 0 8px\"><tr>\n${cifra(ej.enviados.length, 'avisos enviados')}${cifra(dinero(r.valor_en_juego), 'en juego')}${cifra(d.recuperados.length, 'recuperados', d.recuperados.length ? OK : null)}${cifra(dinero(r.valor_recuperado), 'recuperado', d.recuperados.length ? OK : null)}\n</tr></table>\n${ej.enviados.length ? `${h3('Avisos enviados')}\n<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>${th('Comprador')}${th('Paso')}${th('Carrito', 1)}</tr>${filas}</table>\n${ej.enviados.length > 12 ? `<p style=\"font-size:12px;color:${SUAVE};margin:8px 0 0\">…y ${ej.enviados.length - 12} más.</p>` : ''}`\n  : `<p style=\"font-size:15px;color:${TINTA};margin:0\">Ningún carrito necesitaba un aviso en esta pasada.</p>`}\n${d.recuperados.length ? `${h3('Carritos recuperados')}\n<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>${th('Comprador')}${th('Cuándo')}${th('Pedido', 1)}</tr>${filasRec}</table>` : ''}\n${ej.fallidos.length ? `<p style=\"font-size:13px;color:${ALERTA};margin-top:16px\">${ej.fallidos.length} aviso(s) no salieron (se reintentan en la próxima pasada): ${esc(ej.fallidos.slice(0, 3).map((f) => f.email).join(', '))}</p>` : ''}\n${d.en_espera ? `<p style=\"font-size:13px;color:${SUAVE};margin-top:12px\">${d.en_espera} carrito(s) esperan a la próxima pasada por el tope de ${d.max_envios_por_ejecucion} envíos.</p>` : ''}\n${motivos.length ? `<p style=\"font-size:13px;color:${SUAVE};margin-top:12px\">No se escribió a: ${motivos.join(' · ')}.</p>` : ''}\n<p style=\"font-size:13px;color:${SUAVE};margin-top:20px\">Desde que está en marcha: ${ej.historico.enviados || 0} avisos, ${ej.historico.recuperados || 0} carritos recuperados y ${dinero(ej.historico.valor_recuperado)} en pedidos.</p>`;\n\nconst email_html = `<!doctype html><html><body style=\"margin:0;background:${PAPEL};font-family:Arial,Helvetica,sans-serif;color:${TINTA}\">\n<table width=\"100%\" cellspacing=\"0\"><tr><td align=\"center\" style=\"padding:24px\">\n<table width=\"680\" cellspacing=\"0\" style=\"background:#fff;border-radius:12px\"><tr><td style=\"padding:28px\">\n<div style=\"font-family:Georgia,'Times New Roman',serif;font-size:22px;color:${VERDE}\">Carritos abandonados · ${esc(d.tienda)}</div>\n<div style=\"font-size:12px;color:${SUAVE};padding:2px 0 12px;border-bottom:1px solid ${REGLA}\">${new Date(d.ahora).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })} · ${r.carritos_vistos} carritos revisados</div>\n${cuerpo}\n<div style=\"border-top:1px solid ${REGLA};margin-top:24px;padding-top:12px;font-size:11px;color:${SUAVE}\">Denoro Automations</div>\n</td></tr></table></td></tr></table></body></html>`;\n\nconst telegram = `🛒 <b>Carritos · ${d.tienda}</b>\\n` +\n  `<b>Avisos enviados:</b> ${ej.enviados.length} (${dinero(r.valor_en_juego)} en juego)\\n` +\n  (d.recuperados.length ? `<b>Recuperados:</b> ${d.recuperados.length} · ${dinero(r.valor_recuperado)}\\n` : '') +\n  (ej.fallidos.length ? `⚠️ ${ej.fallidos.length} no salieron\\n` : '') +\n  `<i>Total desde el inicio: ${ej.historico.recuperados || 0} recuperados, ${dinero(ej.historico.valor_recuperado)}</i>`;\n\n// Sin avisos, recuperados ni fallos no hay nada que contar: no se manda nada (corre cada 30 minutos).\nconst hayAlgo = Boolean(ej.enviados.length || d.recuperados.length || ej.fallidos.length);\nreturn [{ json: { ...d, enviar_email: Boolean(d.enviar_email && hayAlgo), enviar_telegram: Boolean(d.enviar_telegram && hayAlgo), hay_algo: hayAlgo, asunto: `Denoro · Carritos de ${d.tienda}: ${ej.enviados.length} avisos${d.recuperados.length ? `, ${d.recuperados.length} recuperados` : ''}`, email_html, telegram, ejecucion: ej } }];\n"
+      }
+    },
+    {
+      "id": "8c1f0399-2abc-5399-ab8e-7341041df5f7",
+      "name": "¿Email activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2520,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b319bf17-3595-51f2-8aa5-61f3e3dac097",
+              "leftValue": "={{ $json.enviar_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "93e7d4e1-5781-59c8-af22-a0a4c2649917",
+      "name": "¿Telegram activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2520,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1f43ecc1-b8b8-5160-9d2d-7d0a748787a5",
+              "leftValue": "={{ $json.enviar_telegram }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "920ac7a4-a75c-5e3e-bd3d-ed4b39c21230",
+      "name": "Enviar resumen",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2760,
+        0
+      ],
+      "parameters": {
+        "fromEmail": "={{ $json.email_from }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "36cbbf4d-9c16-559f-944c-e954e407fd87",
+      "name": "Enviar a Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2760,
+        220
+      ],
+      "parameters": {
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "text": "={{ $json.telegram }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "e4c821f6-9814-528d-a506-06b2c4f1aa79",
+      "name": "Al ejecutar para un cliente",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -20,
+        100
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "954b54d2-ca97-567a-a357-2840bce15468",
+      "name": "Resultado para el panel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2520,
+        360
+      ],
+      "parameters": {
+        "jsCode": "// (Se añade a cada automatización en su versión «para un cliente»)\n// Guarda en denoro_estado lo que ha pasado en esta ejecución, para enseñarlo en el panel.\nconst d = $input.first()?.json || {};\nconst cfg = $('Configuración').first().json;\nconst txt = (s) => String(s || '').replace(/<br\\s*\\/?>/gi, '\\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\nconst titulo = txt(d.asunto).replace(/^[^\\p{L}\\p{N}]*Denoro · /u, '').replace(/^[^\\p{L}\\p{N}]+/u, '');\nreturn [{ json: {\n  clave: cfg.__clave, token: cfg.__token, snapshot: '',\n  resumen: JSON.stringify({\n    ultima: new Date().toISOString(), ok: true, modo: cfg.modo || null,\n    titulo: (titulo || \"Ningún carrito necesitaba aviso\").slice(0, 200),\n    texto: txt(d.telegram).slice(0, 1500),\n    avisado: Boolean(d.asunto && (d.enviar_email || d.enviar_telegram)),\n    demo: [cfg.fuente, cfg.destino].includes('demo'),\n  }),\n} }];\n"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "b65256e0-7785-598d-bc4f-98b092d83a31",
+      "name": "Guardar resultado",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2740,
+        360
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__TABLE_ESTADO__",
+          "cachedResultName": "denoro_estado"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "clave",
+              "condition": "eq",
+              "keyValue": "={{ $json.clave }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    }
+  ],
+  "connections": {
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "¿De dónde saco los carritos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿De dónde saco los carritos?": {
+      "main": [
+        [
+          {
+            "node": "Carritos de ejemplo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Carritos de Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Carritos del endpoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carritos de Shopify": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carritos del endpoint": {
+      "main": [
+        [
+          {
+            "node": "Normalizar endpoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carritos de ejemplo": {
+      "main": [
+        [
+          {
+            "node": "Decidir a quién escribo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Shopify": {
+      "main": [
+        [
+          {
+            "node": "Decidir a quién escribo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar endpoint": {
+      "main": [
+        [
+          {
+            "node": "Decidir a quién escribo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decidir a quién escribo": {
+      "main": [
+        [
+          {
+            "node": "¿Hay avisos que mandar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay avisos que mandar?": {
+      "main": [
+        [
+          {
+            "node": "Preparar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar avisos": {
+      "main": [
+        [
+          {
+            "node": "Avisar al comprador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar al comprador": {
+      "main": [
+        [
+          {
+            "node": "Recoger envíos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recoger envíos": {
+      "main": [
+        [
+          {
+            "node": "Resumen para la tienda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sin avisos": {
+      "main": [
+        [
+          {
+            "node": "Resumen para la tienda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resumen para la tienda": {
+      "main": [
+        [
+          {
+            "node": "¿Email activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Telegram activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resultado para el panel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Email activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Telegram activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Al ejecutar para un cliente": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado para el panel": {
+      "main": [
+        [
+          {
+            "node": "Guardar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "Europe/Madrid",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "__WORKFLOW_ERRORES__"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

@@ -1,0 +1,1103 @@
+{
+  "name": "Denoro SaaS — Stock del proveedor",
+  "nodes": [
+    {
+      "id": "37515c99-de3d-5095-82ce-8d8837f06061",
+      "name": "Nota: cómo usarlo",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        -380
+      ],
+      "parameters": {
+        "content": "## Stock del proveedor · versión para el panel\nLa lanzan el **panel de Denoro** (botón *Ejecutar ahora*) y el **Planificador de automatizaciones**.\nLos ajustes de cada cliente llegan en la entrada y se mezclan con los valores por defecto del nodo **Configuración**: aquí no hay que editar nada.\n\nSe genera con `n8n/saas/build.py` a partir del workflow original: no lo edites a mano.",
+        "width": 520,
+        "height": 220,
+        "color": 5
+      }
+    },
+    {
+      "id": "4a19d239-7f55-55a4-a4a8-7152e3fc0c3e",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// ============ CONFIGURACIÓN DEL CLIENTE (edita solo este bloque) ============\nconst CONFIG_BASE = {\n  tienda: 'Tienda Demo',\n  proveedor: 'Proveedor Demo',\n\n  fuente: 'demo',                 // 'demo' o 'url'\n  feed_url: '',                   // si fuente = 'url': CSV o XML del proveedor\n  destino: 'demo',                // 'demo', 'shopify' o 'woocommerce'\n  dominio_shopify: '',            // solo Shopify: tu-tienda.myshopify.com\n  location_id: '',                // solo Shopify: almacén sobre el que se ajusta el stock\n\n  modo_prueba: true,              // true = calcula y avisa, pero NO toca la tienda\n  avisar_cambio_precio_pct: 3,    // avisa si el proveedor sube o baja un precio más de este %\n\n  // --- frenos de seguridad: si el feed llega mal, mejor no tocar nada ---\n  min_referencias: 5,             // por debajo de esto, el feed se considera incompleto\n  max_cambios_pct: 40,            // si cambiaría más de este % del catálogo, se bloquea\n  max_agotados_pct: 25,           // si dejaría agotado más de este % del catálogo, se bloquea\n  margen_stock: 0,                // resta unidades al stock del proveedor (colchón de seguridad)\n\n  email_to: 'cliente@ejemplo.com',\n  email_from: 'stock@tu-dominio.com',\n  telegram_chat_id: 'TU_CHAT_ID',\n};\n// ============================================================================\n\n// ---- Panel único de Denoro: los ajustes del cliente llegan en la entrada ----\nconst __ENTRADA = $input.first().json || {};\nconst __limpio = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, x]) => x !== '' && x !== null && x !== undefined));\nconst __mezclar = (b, o) => {\n  const r = { ...b };\n  for (const [k, v] of Object.entries(o || {})) {\n    if (v && typeof v === 'object' && !Array.isArray(v) && b[k] && typeof b[k] === 'object' && !Array.isArray(b[k])) r[k] = { ...b[k], ...__limpio(v) };\n    else if (v !== undefined && v !== null) r[k] = v;\n  }\n  return r;\n};\nconst CONFIG = { ...__mezclar(CONFIG_BASE, __ENTRADA.config), __token: String(__ENTRADA.token || ''), __auto: String(__ENTRADA.auto || ''), __clave: String(__ENTRADA.clave || '') };\nif (!CONFIG.__token || !CONFIG.__clave) throw new Error('Esta versión se lanza desde el panel de Denoro (falta el cliente)');\nif (!['demo', 'url'].includes(CONFIG.fuente)) throw new Error(`fuente \"${CONFIG.fuente}\" no válida: usa demo o url`);\nif (!['demo', 'shopify', 'woocommerce'].includes(CONFIG.destino)) {\n  throw new Error(`destino \"${CONFIG.destino}\" no válido: usa demo, shopify o woocommerce`);\n}\nif (CONFIG.fuente === 'url' && !/^https?:\\/\\//i.test(String(CONFIG.feed_url || ''))) {\n  throw new Error('Con fuente = url hace falta un feed_url que empiece por http:// o https://');\n}\nif (CONFIG.destino === 'shopify' && !CONFIG.modo_prueba) {\n  if (!/\\.myshopify\\.com$/i.test(String(CONFIG.dominio_shopify || ''))) {\n    throw new Error('Con destino = shopify hace falta dominio_shopify (tu-tienda.myshopify.com)');\n  }\n  if (!String(CONFIG.location_id || '').trim()) {\n    throw new Error('Con destino = shopify hace falta location_id: el almacén sobre el que se ajusta el stock');\n  }\n}\nfor (const [k, min, max] of [['max_cambios_pct', 1, 100], ['max_agotados_pct', 1, 100],\n  ['min_referencias', 1, 1e6], ['avisar_cambio_precio_pct', 0, 100]]) {\n  if (!(CONFIG[k] >= min && CONFIG[k] <= max)) throw new Error(`${k} debe estar entre ${min} y ${max}`);\n}\nif (CONFIG.margen_stock < 0) throw new Error('margen_stock no puede ser negativo');\nconst PLACEHOLDER = /ejemplo\\.com|tu-dominio|TU_CHAT_ID/i;\nfor (const k of ['email_to', 'email_from', 'telegram_chat_id']) {\n  if (PLACEHOLDER.test(String(CONFIG[k] || ''))) {\n    throw new Error(`Configura \"${k}\" en el nodo Configuración (ahora tiene un valor de ejemplo). Déjalo vacío ('') para desactivar ese canal.`);\n  }\n}\nif (CONFIG.telegram_chat_id && !/^-?\\d+$|^@\\w+$/.test(String(CONFIG.telegram_chat_id))) {\n  throw new Error('telegram_chat_id debe ser un número (p. ej. 123456789) o @canal');\n}\nif (!CONFIG.email_to && !CONFIG.telegram_chat_id) throw new Error('Configura al menos un canal: email_to o telegram_chat_id');\nif (CONFIG.email_to && !CONFIG.email_from) throw new Error('Falta email_from (la cuenta SMTP que envía)');\n\nreturn [{ json: {\n  ...CONFIG,\n  enviar_email: Boolean(CONFIG.email_to),\n  enviar_telegram: Boolean(CONFIG.telegram_chat_id),\n  generado_en: new Date().toISOString(),\n} }];\n"
+      }
+    },
+    {
+      "id": "56447966-8505-517c-93c6-4a6df560de4e",
+      "name": "¿De dónde viene el feed?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        460,
+        -80
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "demo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "demo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fuente }}",
+                    "rightValue": "url",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "url"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0431307e-9b4e-5002-8915-06b82772de8e",
+      "name": "Feed de ejemplo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        -180
+      ],
+      "parameters": {
+        "jsCode": "// Feed de ejemplo del proveedor: sirve para probar la sincronización sin conectar nada.\n// Está pensado para que aparezcan todos los casos: subidas, bajadas, agotados,\n// reposiciones, cambios de precio, una alta nueva y una referencia que el proveedor ya no lista.\nconst F = (sku, stock, precio) => ({ json: { _lado: 'feed', sku, stock, precio, proveedor: $('Configuración').first().json.proveedor } });\nreturn [\n  F('MES-01', 4, 289.00),   // baja de stock\n  F('SIL-04', 40, 54.00),   // sube de stock\n  F('EST-02', 0, 79.00),    // se agota\n  F('BAN-07', 0, 119.00),   // se agota\n  F('PER-01', 18, 47.00),   // vuelve a haber (en tienda está a 0)\n  F('LAM-06', 12, 29.50),   // sube de precio, mismo stock\n  F('LAM-09', 3, 61.00),    // baja de precio, mismo stock\n  F('TAZ-01', 64, 8.70),    // sin cambios\n  F('TAZ-03', 9, 29.40),    // sin cambios\n  F('SAR-05', 27, 23.90),   // sin cambios\n  F('CUC-02', 6, 38.40),    // sin cambios\n  F('ALF-01', 21, 20.40),   // sin cambios\n  F('CUA-03', 150, 7.70),   // baja de stock\n  F('CUA-05', 180, 4.70),   // sin cambios\n  F('BOL-02', 33, 17.40),   // sin cambios\n  F('VEL-04', 25, 15.60),   // baja de stock\n  F('DIF-01', 7, 29.40),    // sin cambios\n  F('ESP-12', 30, 22.00),   // alta nueva: el proveedor lo lista y la tienda no lo tiene\n];\n"
+      }
+    },
+    {
+      "id": "ec3b981c-ac2b-51b4-b5e1-b9a399270deb",
+      "name": "Descargar feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        -20
+      ],
+      "parameters": {
+        "url": "={{ $json.feed_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "id": "0f4d502a-0cfc-55e1-8c2c-7968e47e2a3c",
+      "name": "Leer feed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        -20
+      ],
+      "parameters": {
+        "jsCode": "// Lee el feed del proveedor. Acepta CSV (con ; o ,) y XML, y detecta cuál es por el contenido.\nconst cfg = $('Configuración').first().json;\nconst entrada = $input.first();\nlet texto = entrada.json.data ?? entrada.json.body ?? '';\nif (!texto && entrada.binary) {\n  const key = Object.keys(entrada.binary)[0];\n  texto = Buffer.from(entrada.binary[key].data, 'base64').toString('utf8');\n}\ntexto = String(texto).replace(/^\\uFEFF/, '').trim();\nif (!texto) throw new Error('El feed del proveedor llegó vacío: revisa feed_url en el nodo Configuración');\n\nconst numero = (v) => {\n  if (v === null || v === undefined || v === '') return null;\n  const s = String(v).trim();\n  // \"1.234,56\" -> 1234.56 ; \"1,234.56\" -> 1234.56 ; \"12,5\" -> 12.5\n  const limpio = /,\\d{1,2}$/.test(s) ? s.replace(/\\./g, '').replace(',', '.') : s.replace(/,/g, '');\n  const n = parseFloat(limpio.replace(/[^0-9.\\-]/g, ''));\n  return Number.isFinite(n) ? n : null;\n};\nconst clave = (s) => String(s).trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/^g:/, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');\nconst ALIAS = {\n  sku: ['sku', 'referencia', 'ref', 'codigo', 'id', 'mpn', 'ean', 'item_id'],\n  stock: ['stock', 'existencias', 'inventario', 'cantidad', 'qty', 'quantity', 'availability', 'disponibilidad'],\n  precio: ['precio', 'price', 'pvp', 'sale_price', 'precio_venta'],\n  titulo: ['titulo', 'title', 'nombre', 'name', 'descripcion_corta'],\n};\nconst deAlias = (obj) => {\n  const out = {};\n  for (const [destino, nombres] of Object.entries(ALIAS)) {\n    const k = Object.keys(obj).find((h) => nombres.includes(h));\n    if (k !== undefined) out[destino] = obj[k];\n  }\n  return out;\n};\n// \"in stock\" / \"out of stock\" también son formas válidas de decir el stock\nconst stockDe = (v) => {\n  if (v === undefined || v === null || v === '') return null;\n  const s = String(v).trim().toLowerCase();\n  if (/^(out of stock|agotado|sin stock|no|false|0)$/.test(s)) return 0;\n  if (/^(in stock|disponible|si|sí|true)$/.test(s)) return null; // disponible pero sin cantidad\n  return numero(s);\n};\n\nlet filas = [];\nif (texto.startsWith('<')) {\n  // ---- XML: se buscan los bloques que se repiten (item, product, entry, producto) ----\n  const bloques = texto.match(/<(item|product|producto|entry|articulo)\\b[\\s\\S]*?<\\/\\1>/gi) || [];\n  if (!bloques.length) throw new Error('El XML no trae bloques <item>, <product> o <entry>');\n  filas = bloques.map((bloque) => {\n    // fuera la etiqueta que envuelve el bloque, o se leería el producto entero como un solo campo\n    const b = bloque.replace(/^<[a-z0-9:_\\-]+(?:\\s[^>]*)?>/i, '').replace(/<\\/[a-z0-9:_\\-]+>\\s*$/i, '');\n    const campos = {};\n    for (const m of b.matchAll(/<([a-z0-9:_\\-]+)(?:\\s[^>]*)?>([\\s\\S]*?)<\\/\\1>/gi)) {\n      const valor = m[2].replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, '$1').replace(/<[^>]*>/g, '').trim();\n      const k = clave(m[1]);\n      if (valor && campos[k] === undefined) campos[k] = valor;\n    }\n    return campos;\n  });\n} else {\n  // ---- CSV ----\n  const primera = texto.split('\\n')[0];\n  const sep = (primera.match(/;/g) || []).length > (primera.match(/,/g) || []).length ? ';' : ',';\n  const celdas = [];\n  let campo = ''; let fila = []; let comillas = false;\n  for (let i = 0; i < texto.length; i++) {\n    const ch = texto[i];\n    if (comillas) {\n      if (ch === '\"' && texto[i + 1] === '\"') { campo += '\"'; i++; }\n      else if (ch === '\"') comillas = false;\n      else campo += ch;\n    } else if (ch === '\"') comillas = true;\n    else if (ch === sep) { fila.push(campo); campo = ''; }\n    else if (ch === '\\n') { fila.push(campo); celdas.push(fila); fila = []; campo = ''; }\n    else if (ch !== '\\r') campo += ch;\n  }\n  if (campo !== '' || fila.length) { fila.push(campo); celdas.push(fila); }\n  if (celdas.length < 2) throw new Error('El CSV del proveedor no tiene filas de datos');\n  const cabecera = celdas[0].map(clave);\n  filas = celdas.slice(1).map((f) => Object.fromEntries(cabecera.map((h, i) => [h, f[i]])));\n}\n\nconst salida = [];\nconst vistos = new Set();\nfor (const cruda of filas) {\n  const c = deAlias(cruda);\n  const sku = String(c.sku ?? '').trim();\n  if (!sku || vistos.has(sku)) continue;\n  vistos.add(sku);\n  const stock = stockDe(c.stock);\n  salida.push({ json: {\n    _lado: 'feed', sku,\n    titulo: c.titulo ? String(c.titulo).trim() : '',\n    stock: stock === null ? null : Math.max(0, Math.round(stock)),\n    precio: numero(c.precio),\n    proveedor: cfg.proveedor,\n  } });\n}\nif (!salida.length) {\n  throw new Error(`El feed no trajo ninguna referencia reconocible. Columnas vistas: ${Object.keys(filas[0] || {}).join(', ') || '(ninguna)'}`);\n}\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "509917b1-0eab-5942-b055-993813701873",
+      "name": "¿Dónde está la tienda?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        460,
+        280
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.destino }}",
+                    "rightValue": "demo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "demo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.destino }}",
+                    "rightValue": "shopify",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "shopify"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.destino }}",
+                    "rightValue": "woocommerce",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "woocommerce"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e7618acc-d7fa-51b7-b003-206888932393",
+      "name": "Catálogo de ejemplo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        180
+      ],
+      "parameters": {
+        "jsCode": "// Foto del catálogo de la tienda, para el modo demo.\nconst T = (sku, titulo, stock, precio, id) => ({ json: {\n  _lado: 'tienda', sku, titulo, stock, precio, id_tienda: id, inventory_item_id: 9000 + id,\n} });\nreturn [\n  T('MES-01', 'Mesa de comedor extensible', 6, 449.00, 1),\n  T('SIL-04', 'Silla de comedor', 24, 89.00, 2),\n  T('EST-02', 'Estantería de pared', 11, 129.00, 3),\n  T('BAN-07', 'Banco de recibidor', 3, 199.00, 4),\n  T('PER-01', 'Perchero de pie', 0, 79.00, 5),\n  T('LAM-06', 'Lámpara de mesa LED', 12, 45.00, 6),\n  T('LAM-09', 'Lámpara de pie de lectura', 3, 99.00, 7),\n  T('TAZ-01', 'Taza de cerámica 350 ml', 64, 14.50, 8),\n  T('TAZ-03', 'Juego de 4 tazas', 9, 49.00, 9),\n  T('SAR-05', 'Sartén antiadherente 28 cm', 27, 39.90, 10),\n  T('CUC-02', 'Juego de cuchillos 3 piezas', 6, 64.00, 11),\n  T('ALF-01', 'Alfombrilla de escritorio', 21, 34.00, 12),\n  T('CUA-03', 'Cuaderno de tapa dura A5', 210, 12.90, 13),\n  T('CUA-05', 'Cuaderno de bolsillo A6', 180, 7.90, 14),\n  T('BOL-02', 'Bolígrafo de latón', 33, 29.00, 15),\n  T('VEL-04', 'Vela de soja 220 g', 38, 26.00, 16),\n  T('DIF-01', 'Difusor de aceites esenciales', 7, 49.00, 17),\n  T('ANT-99', 'Marco de fotos (descatalogado)', 5, 19.00, 18),\n];\n"
+      }
+    },
+    {
+      "id": "6658496f-b5ea-5fda-a22e-1f3ad23ed9ce",
+      "name": "Productos Shopify",
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [
+        700,
+        340
+      ],
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "product",
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {}
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "385d1b26-2185-5837-8485-22d458548307",
+      "name": "Normalizar tienda (Shopify)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        340
+      ],
+      "parameters": {
+        "jsCode": "// Foto del catálogo de Shopify: una línea por variante, que es lo que tiene SKU y stock.\nconst salida = [];\nfor (const item of $input.all()) {\n  const p = item.json;\n  for (const v of p.variants || []) {\n    if (!v.sku) continue;\n    salida.push({ json: {\n      _lado: 'tienda',\n      sku: String(v.sku).trim(),\n      titulo: (p.variants || []).length > 1 ? `${p.title} · ${v.title}` : p.title,\n      stock: v.inventory_quantity ?? null,\n      precio: v.price != null ? parseFloat(v.price) : null,\n      id_tienda: v.id,\n      inventory_item_id: v.inventory_item_id,\n      gestiona_stock: v.inventory_management === 'shopify',\n    } });\n  }\n}\nif (!salida.length) throw new Error('Shopify no devolvió variantes con SKU: sin SKU no se puede casar el feed con la tienda');\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "dd52cc39-fdb7-54dc-9cf6-ae2276190d7a",
+      "name": "Productos WooCommerce",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [
+        700,
+        500
+      ],
+      "parameters": {
+        "resource": "product",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "212554e7-7a3f-5ec9-b978-15bdea53e28f",
+      "name": "Normalizar tienda (Woo)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        500
+      ],
+      "parameters": {
+        "jsCode": "// Foto del catálogo de WooCommerce.\nconst salida = [];\nfor (const item of $input.all()) {\n  const p = item.json;\n  if (!p.sku) continue;\n  salida.push({ json: {\n    _lado: 'tienda',\n    sku: String(p.sku).trim(),\n    titulo: p.name || '',\n    stock: p.stock_quantity ?? null,\n    precio: p.price != null && p.price !== '' ? parseFloat(p.price) : null,\n    id_tienda: p.id,\n    gestiona_stock: p.manage_stock !== false,\n  } });\n}\nif (!salida.length) throw new Error('WooCommerce no devolvió productos con SKU: sin SKU no se puede casar el feed con la tienda');\nreturn salida;\n"
+      }
+    },
+    {
+      "id": "e3ea2c63-a796-5285-a535-127e1dda4a9c",
+      "name": "Juntar feed y tienda",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1180,
+        140
+      ],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 2,
+        "options": {}
+      }
+    },
+    {
+      "id": "9601b978-db6a-53eb-a05e-2bab4499a2ee",
+      "name": "Comparar con la tienda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        140
+      ],
+      "parameters": {
+        "jsCode": "const __estadoCliente = () => { const g = $getWorkflowStaticData('global'); const k = String($('Configuración').first().json.__token || '_'); g.clientes = g.clientes || {}; return (g.clientes[k] = g.clientes[k] || {}); };\n// Compara el feed del proveedor con la foto de la tienda y decide qué hay que tocar.\n// Si el resultado tiene mala pinta (feed corto, demasiados cambios, demasiados agotados),\n// se bloquea y avisa en vez de aplicar: un feed roto puede vaciar una tienda entera.\nconst cfg = $('Configuración').first().json;\nconst todos = $input.all().map((i) => i.json).filter(Boolean);\nconst feed = todos.filter((x) => x._lado === 'feed');\nconst tienda = todos.filter((x) => x._lado === 'tienda');\nif (!feed.length) throw new Error('No llegó ninguna referencia del proveedor');\nif (!tienda.length) throw new Error('No llegó ningún producto de la tienda');\n\n// El feed trae precios de coste del proveedor: compararlos con el PVP de la tienda no dice nada.\n// Lo que interesa es si el proveedor ha movido su precio desde la última sincronización.\nconst estado = __estadoCliente();\nconst preciosPrevios = estado.precios_proveedor || {};\nconst preciosAhora = {};\n\nconst porSku = new Map();\nfor (const t of tienda) if (!porSku.has(t.sku)) porSku.set(t.sku, t);\n\nconst cambios = [];\nconst precios = [];\nconst nuevos = [];\nconst sinGestion = [];\nconst enFeed = new Set();\n\nfor (const f of feed) {\n  enFeed.add(f.sku);\n  const t = porSku.get(f.sku);\n  if (!t) {\n    if (f.precio != null) preciosAhora[f.sku] = f.precio;\n    nuevos.push({ sku: f.sku, titulo: f.titulo || '', stock: f.stock, precio: f.precio });\n    continue;\n  }\n  if (f.stock !== null && f.stock !== undefined) {\n    const objetivo = Math.max(0, f.stock - cfg.margen_stock);\n    if (t.gestiona_stock === false) {\n      if (objetivo !== t.stock) sinGestion.push({ sku: f.sku, titulo: t.titulo });\n    } else if (t.stock === null || objetivo !== t.stock) {\n      cambios.push({\n        sku: f.sku, titulo: t.titulo, id_tienda: t.id_tienda, inventory_item_id: t.inventory_item_id,\n        antes: t.stock, despues: objetivo, diferencia: t.stock === null ? null : objetivo - t.stock,\n        tipo: objetivo === 0 ? 'agotado' : (t.stock === 0 || t.stock === null ? 'repuesto' : 'ajuste'),\n      });\n    }\n  }\n  if (f.precio != null) {\n    preciosAhora[f.sku] = f.precio;\n    const antes = preciosPrevios[f.sku];\n    if (antes != null && antes > 0 && Math.abs(f.precio - antes) >= 0.01) {\n      const variacion = Math.round(((f.precio - antes) / antes) * 1000) / 10;\n      if (Math.abs(variacion) >= cfg.avisar_cambio_precio_pct) {\n        precios.push({ sku: f.sku, titulo: t.titulo, antes, despues: f.precio, variacion_pct: variacion });\n      }\n    }\n  }\n}\nconst descatalogados = tienda.filter((t) => !enFeed.has(t.sku))\n  .map((t) => ({ sku: t.sku, titulo: t.titulo, stock: t.stock }));\n\n// ---- frenos de seguridad ----\nconst motivos = [];\nconst pct = (n) => Math.round((n / tienda.length) * 1000) / 10;\nconst es = (n) => String(n).replace('.', ',');   // 38.9 -> \"38,9\" en los mensajes\nconst agotados = cambios.filter((c) => c.tipo === 'agotado').length;\nif (feed.length < cfg.min_referencias) {\n  motivos.push(`el feed trae ${feed.length} referencias y el mínimo esperado es ${cfg.min_referencias}: parece incompleto`);\n}\nif (pct(cambios.length) > cfg.max_cambios_pct) {\n  motivos.push(`cambiaría el ${es(pct(cambios.length))} % del catálogo (el tope es ${cfg.max_cambios_pct} %)`);\n}\nif (pct(agotados) > cfg.max_agotados_pct) {\n  motivos.push(`dejaría agotado el ${es(pct(agotados))} % del catálogo (el tope es ${cfg.max_agotados_pct} %)`);\n}\nconst bloqueado = motivos.length > 0;\n// Un feed bloqueado no sirve de referencia de precios: no se guarda como foto buena.\nif (!bloqueado) estado.precios_proveedor = preciosAhora;\nconst aplicar = !bloqueado && !cfg.modo_prueba && cambios.length > 0;\n\nreturn [{ json: {\n  ...cfg,\n  aplicar,\n  bloqueado,\n  motivos,\n  cambios, precios, nuevos, descatalogados, sin_gestion: sinGestion,\n  resumen: {\n    referencias_feed: feed.length,\n    referencias_tienda: tienda.length,\n    cambios: cambios.length,\n    agotados,\n    repuestos: cambios.filter((c) => c.tipo === 'repuesto').length,\n    cambios_precio: precios.length,\n    altas_nuevas: nuevos.length,\n    descatalogados: descatalogados.length,\n    pct_catalogo: pct(cambios.length),\n  },\n} }];\n"
+      }
+    },
+    {
+      "id": "11338321-3dbf-5508-9927-9c4303bcd9e5",
+      "name": "¿Aplico los cambios?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "a861f34a-b9ef-5480-a1d3-6f6b55fe05f1",
+              "leftValue": "={{ $json.aplicar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e9472643-fbeb-58f9-9be9-4ad69f2de931",
+      "name": "Preparar actualizaciones",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        20
+      ],
+      "parameters": {
+        "jsCode": "// Un item por cambio, con lo que necesita cada tienda para aplicarlo.\nconst c = $('Comparar con la tienda').first().json;\nif (!c.aplicar) return [];\nreturn c.cambios.map((x) => ({ json: {\n  ...x,\n  destino: c.destino,\n  dominio_shopify: c.dominio_shopify,\n  location_id: c.location_id,\n} }));\n"
+      }
+    },
+    {
+      "id": "5b6f347b-e512-5237-9685-4aeed157c64c",
+      "name": "¿Qué tienda actualizo?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        2060,
+        20
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.destino }}",
+                    "rightValue": "demo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "demo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.destino }}",
+                    "rightValue": "shopify",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "shopify"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.destino }}",
+                    "rightValue": "woocommerce",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "woocommerce"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1551e604-631d-5b92-b339-2fd850e9bd7d",
+      "name": "Simular cambios",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        -120
+      ],
+      "parameters": {
+        "jsCode": "// Modo demo: no hay tienda que tocar, así que se devuelve el cambio como aplicado.\nreturn $input.all().map((i) => ({ json: { ...i.json, simulado: true } }));\n"
+      }
+    },
+    {
+      "id": "4ce9b2af-0f41-56d8-af52-c3dfc9ac5c55",
+      "name": "Ajustar stock en Shopify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2300,
+        20
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $json.dominio_shopify }}/admin/api/2024-10/inventory_levels/set.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyAccessTokenApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ location_id: Number($json.location_id), inventory_item_id: $json.inventory_item_id, available: $json.despues }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "92853e33-1030-57e6-82fa-338ce3d7c5f8",
+      "name": "Ajustar stock en WooCommerce",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [
+        2300,
+        180
+      ],
+      "parameters": {
+        "resource": "product",
+        "operation": "update",
+        "productId": "={{ $json.id_tienda }}",
+        "updateFields": {
+          "stockQuantity": "={{ $json.despues }}"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "f4186fa1-1754-5674-b1ca-ebd1dfb2f229",
+      "name": "Recoger resultados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2540,
+        20
+      ],
+      "parameters": {
+        "jsCode": "// Cuenta qué cambios se aplicaron y cuáles fallaron (los nodos de tienda siguen aunque uno falle).\nconst pedidos = $('Preparar actualizaciones').all().map((i) => i.json);\nconst respuestas = $input.all().map((i) => i.json);\nconst aplicados = [];\nconst fallidos = [];\npedidos.forEach((p, i) => {\n  const r = respuestas[i] || {};\n  const error = r.error || r.errorMessage || (r.errors && JSON.stringify(r.errors));\n  if (error) fallidos.push({ ...p, error: String(typeof error === 'object' ? error.message || JSON.stringify(error) : error).slice(0, 200) });\n  else aplicados.push(p);\n});\nreturn [{ json: { aplicado: true, aplicados, fallidos } }];\n"
+      }
+    },
+    {
+      "id": "8f821b70-dc91-5eff-bf86-9cf511204023",
+      "name": "Sin cambios",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        280
+      ],
+      "parameters": {
+        "jsCode": "// Rama en la que no se toca la tienda (modo prueba, bloqueo o nada que cambiar).\nreturn [{ json: { aplicado: false, aplicados: [], fallidos: [] } }];\n"
+      }
+    },
+    {
+      "id": "1dd83a5b-a48c-5c1e-894e-402a37d0200d",
+      "name": "Montar informe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2780,
+        140
+      ],
+      "parameters": {
+        "jsCode": "// Monta el parte de sincronización: email con la marca, aviso de Telegram y CSV con todo el detalle.\nconst c = $('Comparar con la tienda').first().json;\nconst ejecucion = $input.first().json || { aplicado: false, aplicados: [], fallidos: [] };\nconst r = c.resumen;\n\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst VERDE = '#235b54'; const TINTA = '#35322c'; const SUAVE = '#6e6a61';\nconst REGLA = '#e7e4dc'; const PAPEL = '#f4f3ef'; const ALERTA = '#8f2f24'; const OK = '#2c5f3c';\nconst h3 = (t) => `<h3 style=\"font-family:Georgia,'Times New Roman',serif;font-size:17px;color:${VERDE};margin:24px 0 8px;font-weight:normal\">${t}</h3>`;\nconst th = (t, der) => `<th align=\"${der ? 'right' : 'left'}\" style=\"font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:${SUAVE};border-bottom:1px solid ${REGLA};padding:6px 0;font-weight:normal\">${t}</th>`;\nconst td = (t, der) => `<td align=\"${der ? 'right' : 'left'}\" style=\"font-size:13px;color:${TINTA};border-bottom:1px solid ${REGLA};padding:8px 0\">${t}</td>`;\nconst cifra = (n, t, color) => `<td width=\"25%\" style=\"padding:0 8px\"><div style=\"font-family:Georgia,serif;font-size:30px;color:${color || VERDE};line-height:1\">${n}</div><div style=\"font-size:12px;color:${SUAVE};padding-top:2px\">${t}</div></td>`;\nconst es = (n) => String(n).replace('.', ',');\nconst dinero = (n) => `${Number(n).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;\n\nconst ETIQUETA = { agotado: 'se agota', repuesto: 'vuelve a haber', ajuste: 'ajuste' };\nconst filas = c.cambios.slice(0, 15).map((x) => `<tr>${td(esc(x.sku))}${td(esc(x.titulo))}` +\n  td(`${x.antes ?? '—'} → <b>${x.despues}</b>`, 1) +\n  td(`<span style=\"color:${x.tipo === 'agotado' ? ALERTA : (x.tipo === 'repuesto' ? OK : SUAVE)}\">${ETIQUETA[x.tipo]}</span>`, 1) + '</tr>').join('');\nconst filasPrecio = c.precios.slice(0, 10).map((x) => `<tr>${td(esc(x.sku))}${td(esc(x.titulo))}` +\n  td(`${dinero(x.antes)} → ${dinero(x.despues)}`, 1) +\n  td(`<span style=\"color:${x.variacion_pct > 0 ? ALERTA : OK}\">${x.variacion_pct > 0 ? '+' : '−'}${es(Math.abs(x.variacion_pct))} %</span>`, 1) + '</tr>').join('');\n\nconst aviso = (texto, color) => `<div style=\"border-left:3px solid ${color};background:${color === ALERTA ? '#f8eae7' : '#e9f0ea'};padding:12px 14px;border-radius:0 8px 8px 0;font-size:14px;color:${TINTA};margin:4px 0 16px\">${texto}</div>`;\n\nlet cabecera = '';\nif (c.bloqueado) {\n  cabecera = aviso(`<b>No se ha tocado la tienda.</b> El feed del proveedor no pasa las comprobaciones de seguridad:<ul style=\"margin:8px 0 0;padding-left:18px\">${c.motivos.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>`, ALERTA);\n} else if (c.modo_prueba) {\n  cabecera = aviso('<b>Modo prueba.</b> Esto es lo que se aplicaría; la tienda no se ha tocado. Pon <code>modo_prueba: false</code> cuando el resultado te cuadre.', VERDE);\n} else if (ejecucion.fallidos.length) {\n  cabecera = aviso(`<b>${ejecucion.aplicados.length} cambios aplicados y ${ejecucion.fallidos.length} con error.</b> Los fallidos están al final del CSV adjunto.`, ALERTA);\n} else if (ejecucion.aplicado) {\n  cabecera = aviso(`<b>${ejecucion.aplicados.length} cambios aplicados en la tienda.</b>`, VERDE);\n} else if (!c.cambios.length) {\n  cabecera = aviso('La tienda ya estaba al día: el stock coincide con el del proveedor.', VERDE);\n}\n\nconst cuerpo = `${cabecera}\n<table width=\"100%\" cellspacing=\"0\" style=\"margin:4px 0 8px\"><tr>\n${cifra(r.cambios, 'cambios de stock')}${cifra(r.agotados, 'se agotan', r.agotados ? ALERTA : null)}${cifra(r.repuestos, 'vuelven a haber')}${cifra(`${es(r.pct_catalogo)} %`, 'del catálogo')}\n</tr></table>\n${c.cambios.length ? `${h3('Stock')}\n<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>${th('Ref.')}${th('Producto')}${th('Stock', 1)}${th('', 1)}</tr>${filas}</table>\n${c.cambios.length > 15 ? `<p style=\"font-size:12px;color:${SUAVE};margin:8px 0 0\">…y ${c.cambios.length - 15} más en el CSV adjunto.</p>` : ''}` : ''}\n${c.precios.length ? `${h3('El proveedor ha movido precios')}\n<p style=\"font-size:13px;color:${SUAVE};margin:0 0 8px\">Comparado con la sincronización anterior. Solo informativo: el precio de venta no se toca nunca de forma automática.</p>\n<table width=\"100%\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr>${th('Ref.')}${th('Producto')}${th('Coste', 1)}${th('', 1)}</tr>${filasPrecio}</table>` : ''}\n${c.nuevos.length ? `${h3('Altas nuevas del proveedor')}\n<p style=\"font-size:13px;color:${TINTA};margin:0\">${c.nuevos.length} referencia(s) que el proveedor lista y la tienda no tiene: <b>${c.nuevos.slice(0, 8).map((n) => esc(n.sku)).join(', ')}</b>${c.nuevos.length > 8 ? '…' : ''}</p>` : ''}\n${c.descatalogados.length ? `${h3('Ya no vienen en el feed')}\n<p style=\"font-size:13px;color:${TINTA};margin:0\">${c.descatalogados.length} referencia(s) de la tienda no aparecen en el feed. <b>No se tocan</b>: podría ser un fallo del proveedor. ${c.descatalogados.slice(0, 8).map((n) => esc(n.sku)).join(', ')}${c.descatalogados.length > 8 ? '…' : ''}</p>` : ''}\n${c.sin_gestion.length ? `<p style=\"font-size:13px;color:${SUAVE};margin-top:16px\">${c.sin_gestion.length} producto(s) tienen el stock sin gestionar en la tienda, así que se han saltado.</p>` : ''}\n<p style=\"font-size:13px;color:${SUAVE};margin-top:20px\">Feed: ${r.referencias_feed} referencias del proveedor · Tienda: ${r.referencias_tienda} productos con SKU.</p>`;\n\nconst email_html = `<!doctype html><html><body style=\"margin:0;background:${PAPEL};font-family:Arial,Helvetica,sans-serif;color:${TINTA}\">\n<table width=\"100%\" cellspacing=\"0\"><tr><td align=\"center\" style=\"padding:24px\">\n<table width=\"680\" cellspacing=\"0\" style=\"background:#fff;border-radius:12px\"><tr><td style=\"padding:28px\">\n<div style=\"font-family:Georgia,'Times New Roman',serif;font-size:22px;color:${VERDE}\">Stock · ${esc(c.tienda)}</div>\n<div style=\"font-size:12px;color:${SUAVE};padding:2px 0 12px;border-bottom:1px solid ${REGLA}\">${new Date(c.generado_en).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })} · proveedor: ${esc(c.proveedor)}</div>\n${cuerpo}\n<div style=\"border-top:1px solid ${REGLA};margin-top:24px;padding-top:12px;font-size:11px;color:${SUAVE}\">Denoro Automations</div>\n</td></tr></table></td></tr></table></body></html>`;\n\nconst estado = c.bloqueado ? '⛔' : (c.cambios.length ? '🔄' : '✅');\nconst telegram = `${estado} <b>Stock · ${c.tienda}</b>\\n` +\n  (c.bloqueado ? `<b>Bloqueado:</b> ${c.motivos[0]}\\n` : '') +\n  `<b>Cambios:</b> ${r.cambios} (${es(r.pct_catalogo)} % del catálogo)\\n` +\n  `<b>Se agotan:</b> ${r.agotados} · <b>Vuelven:</b> ${r.repuestos}\\n` +\n  (r.cambios_precio ? `<b>Precios del proveedor:</b> ${r.cambios_precio} cambios\\n` : '') +\n  (c.bloqueado || c.modo_prueba ? '<i>No se ha tocado la tienda.</i>'\n    : `<b>Aplicados:</b> ${ejecucion.aplicados.length}${ejecucion.fallidos.length ? ` · <b>Con error:</b> ${ejecucion.fallidos.length}` : ''}`);\n\n// ---- CSV con todo el detalle ----\nconst celda = (v) => {\n  const s = String(v ?? '').replace(/\\r?\\n\\s*/g, ' ').trim();\n  return /[\";]/.test(s) ? `\"${s.replace(/\"/g, '\"\"')}\"` : s;\n};\nconst fallados = new Set(ejecucion.fallidos.map((f) => f.sku));\nconst lineas = [['tipo', 'sku', 'producto', 'antes', 'despues', 'estado'].join(';')];\nfor (const x of c.cambios) {\n  lineas.push([x.tipo, x.sku, x.titulo, x.antes, x.despues,\n    c.bloqueado ? 'bloqueado' : (c.modo_prueba ? 'solo prueba' : (fallados.has(x.sku) ? 'ERROR' : 'aplicado'))].map(celda).join(';'));\n}\nfor (const x of c.precios) lineas.push(['precio', x.sku, x.titulo, x.antes, x.despues, 'informativo'].map(celda).join(';'));\nfor (const x of c.nuevos) lineas.push(['alta nueva', x.sku, x.titulo, '', x.stock, 'informativo'].map(celda).join(';'));\nfor (const x of c.descatalogados) lineas.push(['sin feed', x.sku, x.titulo, x.stock, '', 'informativo'].map(celda).join(';'));\nfor (const x of ejecucion.fallidos) lineas.push(['error', x.sku, x.titulo, x.antes, x.despues, x.error].map(celda).join(';'));\n\n// Sin cambios de stock ni de precio, sin bloqueo y sin fallos no hay nada que contar: no se manda nada.\nconst hayAlgo = Boolean(c.bloqueado || r.cambios || r.cambios_precio || (ejecucion.fallidos || []).length);\nreturn [{\n  json: {\n    ...c,\n    enviar_email: Boolean(c.enviar_email && hayAlgo),\n    enviar_telegram: Boolean(c.enviar_telegram && hayAlgo),\n    hay_algo: hayAlgo,\n    asunto: c.bloqueado\n      ? `⛔ Denoro · Stock de ${c.tienda}: feed bloqueado`\n      : `Denoro · Stock de ${c.tienda}: ${r.cambios} cambios${c.modo_prueba ? ' (prueba)' : ''}`,\n    email_html, telegram,\n    ejecucion,\n  },\n  binary: lineas.length > 1 ? { cambios: {\n    data: Buffer.from('﻿' + lineas.join('\\n'), 'utf8').toString('base64'),\n    mimeType: 'text/csv', fileName: `stock-${new Date(c.generado_en).toISOString().slice(0, 10)}.csv`, fileExtension: 'csv',\n  } } : {},\n}];\n"
+      }
+    },
+    {
+      "id": "8c1f0399-2abc-5399-ab8e-7341041df5f7",
+      "name": "¿Email activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3000,
+        40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b319bf17-3595-51f2-8aa5-61f3e3dac097",
+              "leftValue": "={{ $json.enviar_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "93e7d4e1-5781-59c8-af22-a0a4c2649917",
+      "name": "¿Telegram activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3000,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1f43ecc1-b8b8-5160-9d2d-7d0a748787a5",
+              "leftValue": "={{ $json.enviar_telegram }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0359d3e7-09f0-57cf-bf62-75fddd9c0b7e",
+      "name": "Enviar email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3240,
+        40
+      ],
+      "parameters": {
+        "fromEmail": "={{ $json.email_from }}",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": false,
+          "attachments": "cambios"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "36cbbf4d-9c16-559f-944c-e954e407fd87",
+      "name": "Enviar a Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3240,
+        260
+      ],
+      "parameters": {
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "text": "={{ $json.telegram }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "ee414aad-ace6-595a-9b1a-9d2c7f9f8a81",
+      "name": "Al ejecutar para un cliente",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -20,
+        100
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "292be435-7e01-5c34-8d8b-7ebda4e89043",
+      "name": "Resultado para el panel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3000,
+        400
+      ],
+      "parameters": {
+        "jsCode": "// (Se añade a cada automatización en su versión «para un cliente»)\n// Guarda en denoro_estado lo que ha pasado en esta ejecución, para enseñarlo en el panel.\nconst d = $input.first()?.json || {};\nconst cfg = $('Configuración').first().json;\nconst txt = (s) => String(s || '').replace(/<br\\s*\\/?>/gi, '\\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\nconst titulo = txt(d.asunto).replace(/^[^\\p{L}\\p{N}]*Denoro · /u, '').replace(/^[^\\p{L}\\p{N}]+/u, '');\nreturn [{ json: {\n  clave: cfg.__clave, token: cfg.__token, snapshot: '',\n  resumen: JSON.stringify({\n    ultima: new Date().toISOString(), ok: true, modo: cfg.modo || null,\n    titulo: (titulo || \"Sin cambios de stock\").slice(0, 200),\n    texto: txt(d.telegram).slice(0, 1500),\n    avisado: Boolean(d.asunto && (d.enviar_email || d.enviar_telegram)),\n    demo: [cfg.fuente, cfg.destino].includes('demo'),\n  }),\n} }];\n"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "b8b224d8-2e1b-54d1-b6df-2625fdd7824e",
+      "name": "Guardar resultado",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3220,
+        400
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__TABLE_ESTADO__",
+          "cachedResultName": "denoro_estado"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "clave",
+              "condition": "eq",
+              "keyValue": "={{ $json.clave }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    }
+  ],
+  "connections": {
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "¿De dónde viene el feed?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Dónde está la tienda?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿De dónde viene el feed?": {
+      "main": [
+        [
+          {
+            "node": "Feed de ejemplo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Descargar feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar feed": {
+      "main": [
+        [
+          {
+            "node": "Leer feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Feed de ejemplo": {
+      "main": [
+        [
+          {
+            "node": "Juntar feed y tienda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer feed": {
+      "main": [
+        [
+          {
+            "node": "Juntar feed y tienda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Dónde está la tienda?": {
+      "main": [
+        [
+          {
+            "node": "Catálogo de ejemplo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Productos Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Productos WooCommerce",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Productos Shopify": {
+      "main": [
+        [
+          {
+            "node": "Normalizar tienda (Shopify)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Productos WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Normalizar tienda (Woo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Catálogo de ejemplo": {
+      "main": [
+        [
+          {
+            "node": "Juntar feed y tienda",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Normalizar tienda (Shopify)": {
+      "main": [
+        [
+          {
+            "node": "Juntar feed y tienda",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Normalizar tienda (Woo)": {
+      "main": [
+        [
+          {
+            "node": "Juntar feed y tienda",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Juntar feed y tienda": {
+      "main": [
+        [
+          {
+            "node": "Comparar con la tienda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comparar con la tienda": {
+      "main": [
+        [
+          {
+            "node": "¿Aplico los cambios?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Aplico los cambios?": {
+      "main": [
+        [
+          {
+            "node": "Preparar actualizaciones",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin cambios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar actualizaciones": {
+      "main": [
+        [
+          {
+            "node": "¿Qué tienda actualizo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Qué tienda actualizo?": {
+      "main": [
+        [
+          {
+            "node": "Simular cambios",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ajustar stock en Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ajustar stock en WooCommerce",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simular cambios": {
+      "main": [
+        [
+          {
+            "node": "Recoger resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ajustar stock en Shopify": {
+      "main": [
+        [
+          {
+            "node": "Recoger resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ajustar stock en WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Recoger resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recoger resultados": {
+      "main": [
+        [
+          {
+            "node": "Montar informe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sin cambios": {
+      "main": [
+        [
+          {
+            "node": "Montar informe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar informe": {
+      "main": [
+        [
+          {
+            "node": "¿Email activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Telegram activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resultado para el panel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Email activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Telegram activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar a Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Al ejecutar para un cliente": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado para el panel": {
+      "main": [
+        [
+          {
+            "node": "Guardar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "Europe/Madrid",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "__WORKFLOW_ERRORES__"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

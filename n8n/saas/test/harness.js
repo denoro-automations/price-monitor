@@ -4,9 +4,11 @@ const path = require('path');
 const SRC = path.join(__dirname, '..', 'src');
 const read = (f) => fs.readFileSync(path.join(SRC, f), 'utf8');
 const WITH_ENGINE = new Set(['api.js', 'revisar.js']);
+const WITH_CATALOGO = new Set(['api.js', 'planificador-autos.js']);  // igual que build.py
 
 function assemble(file, consts = {}) {
   let code = read(file);
+  if (WITH_CATALOGO.has(file)) code = read('automatizaciones.js') + '\n' + code;
   if (WITH_ENGINE.has(file)) code = read('engine.js') + '\n' + read('messages.js') + '\n' + code;
   for (const [k, v] of Object.entries(consts)) code = code.split(k).join(v);
   return code;

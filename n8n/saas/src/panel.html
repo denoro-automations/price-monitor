@@ -4,84 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Denoro · Tu monitor de precios</title>
+<meta name="theme-color" content="#fcfcfa">
+<title>Tu panel · Denoro Automations</title>
+<link rel="icon" href="https://denoroautomations.com/assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <style>/*CSS*/</style>
 </head>
-<body>
-<header class="top"><div class="wrap">
-  <div class="brand"><i>D</i>Denoro <small>Monitor de precios</small></div>
-  <div class="spacer"></div>
-  <span class="hint" id="last"></span>
-  <button id="checkNow" type="button">Revisar ahora</button>
-</div></header>
+<body class="app">
+<a class="skip" href="#main">Ir al contenido</a>
+<header>
+  <div class="wrap">
+    <a class="brand" href="https://denoroautomations.com/" target="_blank" rel="noopener"><i aria-hidden="true">D</i>Denoro <span>Automations</span></a>
+    <div class="who"><span class="hint" id="who"></span><a class="btn ghost sm" href="https://denoroautomations.com/#presupuesto" target="_blank" rel="noopener">Escríbeme</a></div>
+  </div>
+</header>
 
-<main class="wrap" id="app">
-  <div class="center" id="loading"><p class="hint">Cargando tu panel…</p></div>
-</main>
+<main id="main"><div class="wrap" id="app"><div class="center"><p class="hint"><span class="spin" aria-hidden="true"></span>&nbsp; Cargando tu panel…</p></div></div></main>
+
+<footer><div class="wrap"><span>© Denoro Automations · Tu panel privado: no compartas este enlace.</span><a href="https://denoroautomations.com/legal.html" target="_blank" rel="noopener">Aviso legal y privacidad</a></div></footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<template id="tpl">
-  <h1 id="title"></h1>
-  <p class="sub">Pega enlaces de tu competencia y te aviso cuando cambien sus precios o su stock.</p>
-
-  <div class="stats">
-    <div class="stat"><b class="num" id="sLinks">0</b><span>enlaces vigilados</span></div>
-    <div class="stat"><b class="num" id="sProducts">0</b><span>productos en seguimiento</span></div>
-    <div class="stat"><b class="num" id="sChanges">0</b><span>cambios en la última revisión</span></div>
-  </div>
-
-  <div class="grid">
-    <section>
-      <div class="card">
-        <div class="card-head"><h2>Añadir un enlace</h2><span class="hint" id="quota"></span></div>
-        <form id="addForm" class="add" autocomplete="off">
-          <label for="url" class="sr-only">Enlace de la tienda o del producto</label>
-          <input id="url" name="url" inputmode="url" placeholder="https://tienda-competidor.com/products/camiseta" required>
-          <button class="primary" id="detectBtn" type="submit">Comprobar</button>
-        </form>
-        <ul class="steps">
-          <li><b>Producto concreto</b> (cualquier tienda): vigilo su precio y stock. Puedes indicar tu precio para saber si te ganan.</li>
-          <li><b>Tienda entera</b> (Shopify o WooCommerce): pega la página principal o una colección y vigilo todo su catálogo.</li>
-        </ul>
-        <div id="addMsg"></div>
-        <div id="preview"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-head"><h2>Lo que estás vigilando</h2><span class="hint">Se revisa automáticamente</span></div>
-        <div style="overflow-x:auto"><table>
-          <thead><tr><th>Enlace</th><th class="hide-s">Estado</th><th class="r">Precio actual</th><th class="r">Tu precio</th><th></th></tr></thead>
-          <tbody id="watchRows"></tbody>
-        </table></div>
-      </div>
-    </section>
-
-    <aside>
-      <div class="card">
-        <h2>Dónde recibes los avisos</h2>
-        <p class="hint" style="margin:0 0 14px">Un único resumen cuando hay cambios. Nunca spam.</p>
-        <form id="settingsForm">
-          <div class="field"><label for="email">Email</label><input id="email" type="email" placeholder="tu@tienda.com"></div>
-          <div class="field"><label for="chat">Telegram · chat ID</label><input id="chat" inputmode="numeric" placeholder="123456789">
-            <ol class="steps"><li>Abre <a id="botLink" href="#" target="_blank" rel="noopener">el bot de avisos</a> y pulsa <b>Iniciar</b>.</li><li>Escribe a <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a> y copia tu <b>Id</b>.</li></ol></div>
-          <div class="field"><label for="freq">Revisar cada</label>
-            <select id="freq"><option value="1">1 hora</option><option value="3">3 horas</option><option value="6">6 horas</option><option value="12">12 horas</option><option value="24">24 horas</option></select></div>
-          <div class="field"><label for="thr">Avisar a partir de un cambio del</label>
-            <select id="thr"><option value="0">cualquier cambio</option><option value="1">1 %</option><option value="3">3 %</option><option value="5">5 %</option><option value="10">10 %</option></select></div>
-          <label class="toggle"><input type="checkbox" id="optStock"> Cambios de stock</label>
-          <label class="toggle"><input type="checkbox" id="optNew"> Productos nuevos</label>
-          <label class="toggle"><input type="checkbox" id="optRemoved"> Productos retirados</label>
-          <div class="row" style="margin-top:14px"><button class="primary" type="submit" id="saveSettings">Guardar</button><button type="button" id="testBtn">Enviar prueba</button></div>
-          <div id="setMsg"></div>
-        </form>
-      </div>
-    </aside>
-  </div>
-</template>
-
 <script>
+/*AUTOS*/
 (() => {
   const API = location.pathname.replace(/\/panel\/?$/, '/api');
   const BOT = '__BOT_USERNAME__';
@@ -89,149 +34,493 @@
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const TYPES = { shopify_tienda: 'Tienda Shopify', woo_tienda: 'Tienda WooCommerce', shopify_producto: 'Producto · Shopify', woo_producto: 'Producto · WooCommerce', producto: 'Producto' };
-  const fmtMoney = (v, cur) => v === null || v === undefined ? '—' : new Intl.NumberFormat('es-ES', cur ? { style: 'currency', currency: cur } : { minimumFractionDigits: 2 }).format(v);
+  const money = (v, cur) => v === null || v === undefined ? '—' : new Intl.NumberFormat('es-ES', cur ? { style: 'currency', currency: cur } : { minimumFractionDigits: 2 }).format(v);
+  const fecha = (iso) => new Date(iso).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const ago = (iso) => {
-    if (!iso) return 'pendiente';
+    if (!iso) return 'todavía no';
     const m = Math.round((Date.now() - new Date(iso)) / 60000);
     if (m < 1) return 'hace un momento'; if (m < 60) return `hace ${m} min`;
     const h = Math.round(m / 60); if (h < 24) return `hace ${h} h`;
+    const d = Math.round(h / 24); if (d < 7) return `hace ${d} día${d > 1 ? 's' : ''}`;
     return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
   };
-  let state = null;
-  let pending = null;
+  const horasTxt = (h) => (h < 1 ? `${Math.round(h * 60)} minutos` : h === 1 ? '1 hora' : `${h} horas`);
+  let S = null;            // estado del cliente
+  let tab = '';
+  let pending = null;      // enlace detectado en el monitor, pendiente de confirmar
 
-  function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3200); }
-  function msg(id, text, kind = 'error') { $(id).innerHTML = text ? `<p class="msg ${kind}">${esc(text)}</p>` : ''; }
+  function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3600); }
+  const msg = (el, text, kind = 'err') => { if (typeof el === 'string') el = $(el); if (el) el.innerHTML = text ? `<p class="msg ${kind}">${esc(text)}</p>` : ''; };
   async function api(accion, data = {}) {
     let res;
     try { res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, accion, ...data }) }); }
     catch (e) { return { ok: false, error: 'No hay conexión con el servidor. Inténtalo en un momento.' }; }
     try { return await res.json(); } catch (e) { return { ok: false, error: `Error del servidor (${res.status})` }; }
   }
-  async function busy(btn, fn) { const t = btn.textContent; btn.disabled = true; btn.textContent = '…'; try { return await fn(); } finally { btn.disabled = false; btn.textContent = t; } }
+  async function busy(btn, text, fn) {
+    const html = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="spin" aria-hidden="true"></span> ${esc(text)}`;
+    try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = html; }
+  }
 
-  function render() {
-    const s = state;
-    $('title').textContent = s.cliente.nombre;
-    const watches = s.vigilancias;
-    $('sLinks').textContent = watches.length;
-    $('sProducts').textContent = watches.reduce((a, w) => a + (w.estado?.productos || 0), 0).toLocaleString('es-ES');
-    $('sChanges').textContent = s.resumen?.cambios ?? '—';
-    $('last').textContent = s.resumen?.ultima ? `Última revisión ${ago(s.resumen.ultima)}` : 'Aún sin revisar';
-    $('quota').textContent = `${watches.length} de ${s.ajustes.max_vigilancias} enlaces`;
-    const rows = watches.map((w) => {
+  // ---------------------------------------------------------------- estado de cada automatización
+  const servicio = (id) => S.servicios.find((s) => s.id === id);
+  function estadoAuto(s) {
+    if (s.id === 'monitor') {
+      const r = s.estado;
+      if (!S.vigilancias.length) return { cls: 'info', txt: 'Añade tu primer enlace', dot: 'info' };
+      if (!r) return { cls: 'info', txt: 'Primera revisión pendiente', dot: 'info' };
+      if (r.con_error > 0) return { cls: 'bad', txt: `${r.con_error} enlace${r.con_error > 1 ? 's' : ''} con error`, dot: 'bad' };
+      return { cls: 'ok', txt: 'Vigilando', dot: 'ok' };
+    }
+    const e = s.estado;
+    if (!e) return { cls: 'info', txt: 'Sin ejecutar todavía', dot: 'info' };
+    if (e.ok === false) return { cls: 'bad', txt: 'Falló la última pasada', dot: 'bad' };
+    return { cls: 'ok', txt: e.demo ? 'Funcionando · datos de ejemplo' : 'Funcionando', dot: 'ok' };
+  }
+  function cadaTxt(a, aj) {
+    if (a.cada.tipo === 'horas') return `Cada ${horasTxt(Number(aj.cada_horas || a.cada.def))}${a.cada.semanal && aj[a.cada.semanal.campo] !== false ? ` · ${a.cada.semanal.texto}` : ''}`;
+    if (a.cada.tipo === 'semanal') return a.cada.opcional && aj.programado === false ? 'Solo cuando pulses «Ejecutar ahora»' : a.cada.texto;
+    return `Cada ${horasTxt(S.ajustes.frecuencia_horas)}`;
+  }
+  function proxima(a, s) {
+    const aj = s.ajustes || {};
+    if (a.cada.tipo === 'horas') {
+      const u = s.estado?.ultima; const h = Number(aj.cada_horas || a.cada.def);
+      if (!u) return 'En la próxima media hora';
+      const t = new Date(u).getTime() + h * 3600000;
+      return t <= Date.now() + 30 * 60000 ? 'En la próxima media hora' : fecha(new Date(t).toISOString());
+    }
+    if (a.cada.tipo === 'semanal') {
+      if (a.cada.opcional && aj.programado === false) return 'Cuando tú la lances';
+      const cita = ultimaCitaSemanal(Date.now(), a.cada.dia, a.cada.hora) + 7 * 86400000;
+      return fecha(new Date(cita).toISOString());
+    }
+    return '';
+  }
+  const origenTxt = (aj) => {
+    const vals = [aj.fuente, aj.destino].filter(Boolean);
+    if (!vals.length) return '';
+    return vals.every((v) => v === 'demo') ? 'Datos de ejemplo' : vals.includes('demo') ? 'Mezcla: ejemplo y reales' : 'Tus datos reales';
+  };
+
+  // ---------------------------------------------------------------- estructura
+  function shell() {
+    const activas = S.servicios.length;
+    const avisos = [S.cliente.email, S.cliente.telegram_chat_id ? 'Telegram' : ''].filter(Boolean).join(' · ') || 'Sin configurar';
+    const ultimas = S.servicios.map((s) => s.estado?.ultima).filter(Boolean).sort().reverse();
+    $('who').textContent = S.cliente.nombre;
+    $('app').innerHTML = `
+      <div class="p-hero">
+        <p class="eyebrow">Tu panel · Denoro Automations</p>
+        <h1>${esc(S.cliente.nombre)}</h1>
+        <p class="lead">Aquí ves qué hace cada automatización y la ajustas tú. Los cambios se aplican en la siguiente pasada; si quieres verlo ya, pulsa «Ejecutar ahora».</p>
+        <dl class="facts">
+          <div><dt>Automatizaciones</dt><dd><span class="big num">${activas}</span></dd></div>
+          <div><dt>Última actividad</dt><dd>${esc(ultimas[0] ? ago(ultimas[0]) : 'todavía ninguna')}</dd></div>
+          <div><dt>Avisos a</dt><dd>${esc(avisos)}</dd></div>
+        </dl>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Secciones del panel" id="tabs"></div>
+      <div role="tabpanel" id="panel" tabindex="-1"></div>`;
+    renderTabs();
+  }
+  function renderTabs() {
+    const items = [['resumen', 'Resumen', '']].concat(S.servicios.map((s) => [s.id, AUTO[s.id].corto, estadoAuto(s).dot]), [['avisos', 'Avisos', S.cliente.email || S.cliente.telegram_chat_id ? '' : 'bad']]);
+    $('tabs').innerHTML = items.map(([id, name, dot]) => `<button class="tab" role="tab" id="tab-${id}" aria-controls="panel" aria-selected="${id === tab}" data-tab="${id}">${dot ? `<span class="dot ${dot}" aria-hidden="true"></span>` : ''}${esc(name)}</button>`).join('');
+  }
+  function go(id, focus) {
+    const valid = ['resumen', 'avisos', ...S.servicios.map((s) => s.id)];
+    tab = valid.includes(id) ? id : 'resumen';
+    if (location.hash.slice(1) !== tab) history.replaceState(null, '', `#${tab}`);
+    renderTabs();
+    const p = $('panel');
+    p.setAttribute('aria-labelledby', `tab-${tab}`);
+    if (tab === 'resumen') renderResumen(p);
+    else if (tab === 'avisos') renderAvisos(p);
+    else if (tab === 'monitor') renderMonitor(p);
+    else renderAuto(p, tab);
+    if (focus) { $(`tab-${tab}`)?.scrollIntoView({ block: 'nearest', inline: 'center' }); window.scrollTo({ top: Math.min(window.scrollY, $('tabs').offsetTop - 68), behavior: 'smooth' }); }
+  }
+
+  // ---------------------------------------------------------------- resumen
+  function renderResumen(p) {
+    const sinAvisos = !S.cliente.email && !S.cliente.telegram_chat_id;
+    const cards = S.servicios.map((s) => {
+      const a = AUTO[s.id]; const st = estadoAuto(s);
+      const aj = s.ajustes || {};
+      const ult = s.id === 'monitor' ? s.estado?.ultima : s.estado?.ultima;
+      const linea = s.id === 'monitor'
+        ? `${S.vigilancias.length} de ${S.ajustes.max_vigilancias} enlaces vigilados${s.estado?.cambios !== undefined ? ` · ${s.estado.cambios} cambios en la última revisión` : ''}`
+        : s.estado?.ok === false ? s.estado.error : (s.estado?.titulo || a.resumen);
+      return `<article class="auto">
+        <p class="eyebrow">${esc(a.cat)}</p>
+        <h2>${esc(a.nombre)}</h2>
+        <div class="auto-state"><span class="badge ${st.cls}">${esc(st.txt)}</span></div>
+        <p>${esc(linea)}</p>
+        <dl class="auto-meta">
+          <div><dt>Cada</dt><dd>${esc(cadaTxt(a, aj))}</dd></div>
+          <div><dt>Última</dt><dd>${esc(ult ? ago(ult) : 'todavía no')}</dd></div>
+          ${s.id !== 'monitor' && origenTxt(aj) ? `<div><dt>Datos</dt><dd>${esc(origenTxt(aj))}</dd></div>` : ''}
+        </dl>
+        <button type="button" class="link-arrow" data-go="${a.id}">${s.id === 'monitor' ? 'Ver y añadir enlaces' : 'Ajustar y ver resultados'}</button>
+      </article>`;
+    }).join('');
+    p.innerHTML = `${sinAvisos ? `<p class="msg err" style="margin:0 0 var(--s5)">Aún no me has dicho dónde avisarte. <button type="button" class="link-arrow" data-go="avisos" style="background:none;border:0;border-bottom:1px solid;cursor:pointer;color:inherit;font:inherit">Pon tu email o tu Telegram</button></p>` : ''}
+      <div class="autos panel">${cards}</div>`;
+  }
+
+  // ---------------------------------------------------------------- campos de un formulario
+  const conectada = (need) => !need || (S.conexiones || []).includes(need);
+  function campo(f, v, pre) {
+    const id = `${pre}-${f.k}`;
+    const hint = f.hint ? `<p class="hint">${esc(f.hint)}</p>` : '';
+    const wide = ['bool', 'pasos', 'sitios', 'obj', 'lista'].includes(f.t) || f.t === 'url' || (f.label || '').length > 34 ? ' full' : '';
+    const show = f.show ? ` data-show='${esc(JSON.stringify(f.show))}'` : '';
+    if (f.t === 'bool') return `<div class="field full"${show}><label class="check"><input type="checkbox" name="${f.k}" id="${id}"${v ? ' checked' : ''}> <span>${esc(f.label)}${f.hint ? `<small>${esc(f.hint)}</small>` : ''}</span></label></div>`;
+    if (f.t === 'select') {
+      const opts = f.opts.map(([val, label, x]) => {
+        const need = x?.conexion; const ok = conectada(need);
+        return `<option value="${esc(val)}"${val === v ? ' selected' : ''}${ok ? '' : ' disabled'}>${esc(label)}${ok ? '' : ' · la conecto yo'}</option>`;
+      }).join('');
+      return `<div class="field${wide}"${show}><label for="${id}">${esc(f.label)}</label><select name="${f.k}" id="${id}">${opts}</select>${hint}</div>`;
+    }
+    if (f.t === 'obj') {
+      const val = v || {};
+      return `<div class="field full"${show}><p class="hint" style="margin:0 0 var(--s3)">${esc(f.hint || '')}</p><div class="fgrid" data-obj="${f.k}">${f.campos.map((s) => `
+        <div class="field"><label for="${id}-${s.k}">${esc(s.label)}</label><input id="${id}-${s.k}" data-k="${s.k}" type="${s.t === 'email' ? 'email' : 'text'}" value="${esc(val[s.k] || '')}" maxlength="${s.max || 120}"></div>`).join('')}</div></div>`;
+    }
+    if (f.t === 'pasos') return `<div class="field full"${show} data-list="pasos" data-k="${f.k}">${(v || []).map((x, i) => pasoHtml(x, i)).join('')}
+      <button type="button" class="btn sm" data-add="paso" style="margin-top:var(--s3)">Añadir un aviso</button></div>`;
+    if (f.t === 'sitios') return `<div class="field full"${show} data-list="sitios" data-k="${f.k}">${hint}${(v || []).map((x, i) => sitioHtml(x, i)).join('')}
+      <button type="button" class="btn sm" data-add="sitio" style="margin-top:var(--s3)">Añadir una página</button></div>`;
+    const type = { url: 'url', email: 'email', number: 'number', color: 'color' }[f.t] || 'text';
+    const val = f.t === 'lista' ? (v || []).join(', ') : v ?? '';
+    const extra = f.t === 'number' ? ` inputmode="decimal" step="any"${f.min !== undefined ? ` min="${f.min}"` : ''}${f.max !== undefined ? ` max="${f.max}"` : ''}` : f.max ? ` maxlength="${f.max}"` : '';
+    const ph = f.t === 'url' ? ' placeholder="https://"' : '';
+    return `<div class="field${wide}"${show}><label for="${id}">${esc(f.label)}</label><input name="${f.k}" id="${id}" type="${type}" value="${esc(val)}"${extra}${ph}>${hint}</div>`;
+  }
+  const pasoHtml = (x, i) => `<div class="subform" data-item>
+      <div class="subform-head"><b>Aviso ${i + 1}</b><button type="button" class="btn ghost sm danger" data-del>Quitar</button></div>
+      <div class="fgrid">
+        <div class="field"><label>Horas desde el abandono</label><input data-k="horas" type="number" min="0" max="2000" step="any" value="${esc(x.horas ?? '')}"></div>
+        <div class="field"><label>Cupón (opcional)</label><input data-k="cupon" value="${esc(x.cupon || '')}" maxlength="30"></div>
+        <div class="field full"><label>Asunto del email</label><input data-k="asunto" value="${esc(x.asunto || '')}" maxlength="120"></div>
+      </div></div>`;
+  const sitioHtml = (x, i) => `<div class="subform" data-item>
+      <div class="subform-head"><b>Página ${i + 1}</b><button type="button" class="btn ghost sm danger" data-del>Quitar</button></div>
+      <div class="fgrid">${CAMPOS_SITIO.map(([k, label, req]) => `<div class="field${k === 'url' ? ' full' : ''}"><label>${esc(label)}${req ? '' : ' (opcional)'}</label><input data-k="${k}" value="${esc(x[k] || '')}"${k === 'url' ? ' type="url" placeholder="https://"' : ''}></div>`).join('')}</div></div>`;
+
+  function leerForm(form, a) {
+    const out = {};
+    for (const f of a.campos) {
+      if (!f.k) continue;
+      if (f.t === 'obj') { out[f.k] = Object.fromEntries([...form.querySelectorAll(`[data-obj="${f.k}"] [data-k]`)].map((i) => [i.dataset.k, i.value])); continue; }
+      if (f.t === 'pasos' || f.t === 'sitios') { out[f.k] = [...form.querySelectorAll(`[data-list][data-k="${f.k}"] [data-item]`)].map((it) => Object.fromEntries([...it.querySelectorAll('[data-k]')].map((i) => [i.dataset.k, i.value]))); continue; }
+      const el = form.elements[f.k]; if (!el) continue;
+      out[f.k] = f.t === 'bool' ? el.checked : el.value;
+    }
+    if (form.elements.cada_horas) out.cada_horas = Number(form.elements.cada_horas.value);
+    if (form.elements.programado) out.programado = form.elements.programado.checked;
+    return out;
+  }
+  function aplicarVisibilidad(form) {
+    const vals = Object.fromEntries([...form.querySelectorAll('select[name]')].map((s) => [s.name, s.value]));
+    form.querySelectorAll('[data-show]').forEach((el) => {
+      const cond = JSON.parse(el.dataset.show);
+      el.hidden = !Object.entries(cond).every(([k, vs]) => vs.includes(vals[k]));
+    });
+    const demo = [vals.fuente, vals.destino].filter(Boolean);
+    const aviso = form.querySelector('[data-demo]');
+    if (aviso) aviso.hidden = !demo.length || !demo.includes('demo');
+  }
+
+  // ---------------------------------------------------------------- pestaña de una automatización
+  function renderAuto(p, id) {
+    const a = AUTO[id]; const s = servicio(id); const aj = s.ajustes; const st = estadoAuto(s);
+    const grupos = []; let g = null;
+    for (const f of a.campos) { if (f.g) { g = { t: f.g, f: [] }; grupos.push(g); } else g.f.push(f); }
+    let cuando = '';
+    if (a.cada.tipo === 'horas') cuando = `<div class="field"><label for="x-cada">Frecuencia</label><select name="cada_horas" id="x-cada">${a.cada.opts.map((h) => `<option value="${h}"${Number(aj.cada_horas) === h ? ' selected' : ''}>Cada ${horasTxt(h)}</option>`).join('')}</select></div>`;
+    else if (a.cada.opcional) cuando = `<div class="field full"><label class="check"><input type="checkbox" name="programado"${aj.programado !== false ? ' checked' : ''}> <span>Ejecutarla sola ${esc(a.cada.texto.toLowerCase())}<small>Si la desmarcas, solo se ejecuta cuando pulses «Ejecutar ahora».</small></span></label></div>`;
+    else cuando = `<div class="field full"><p class="hint" style="margin:0">Se ejecuta sola: ${esc(a.cada.texto.toLowerCase())}.</p></div>`;
+    const res = s.estado; const resR = s.estado_resumen;
+    const resultado = (r, titulo) => r ? `<div class="p-card result">
+        <p class="eyebrow">${esc(titulo)}</p>
+        ${r.ok === false ? `<p class="msg err" style="margin:0">${esc(r.error || 'Error')}</p><p class="note">${esc(fecha(r.ultima))}. Si no sabes qué hacer, escríbeme y lo miro.</p>`
+        : `<div class="tg"><div class="tg-head"><i aria-hidden="true">D</i><div><b>${esc(r.titulo || 'Hecho')}</b><span>${esc(fecha(r.ultima))}${r.avisado ? ' · enviado a tus avisos' : ' · sin aviso: nada que contar'}</span></div></div>
+           ${r.texto ? `<div class="tg-msg">${esc(r.texto)}</div>` : ''}</div>`}</div>` : '';
+    p.innerHTML = `<div class="p-grid">
+      <form class="p-card" id="autoForm" novalidate>
+        <p class="eyebrow">${esc(a.cat)}</p>
+        <h2>${esc(a.nombre)}</h2>
+        <p>${esc(a.resumen)}</p>
+        <p class="msg warn" data-demo hidden style="margin-bottom:var(--s5)">Está en modo prueba con datos de ejemplo: puedes ejecutarla y ver el resultado sin tocar nada real. Cuando quieras usar tus datos, cambia la fuente.</p>
+        ${grupos.map((gr) => `<fieldset><legend>${esc(gr.t)}</legend><div class="fgrid">${gr.f.map((f) => campo(f, aj[f.k], 'x')).join('')}</div></fieldset>`).join('')}
+        <fieldset><legend>Cuándo</legend><div class="fgrid">${cuando}</div></fieldset>
+        <div class="actions"><button class="btn primary" id="saveAuto">Guardar cambios</button><span class="hint" id="dirty"></span></div>
+        <div id="autoMsg"></div>
+      </form>
+      <aside class="p-side">
+        <div class="p-card sunk">
+          <p class="eyebrow">Estado</p>
+          <span class="badge ${st.cls}">${esc(st.txt)}</span>
+          <dl class="facts tight">
+            <div><dt>Cuándo</dt><dd>${esc(cadaTxt(a, aj))}</dd></div>
+            <div><dt>Última</dt><dd>${esc(res?.ultima ? ago(res.ultima) : 'todavía no')}</dd></div>
+            <div><dt>Próxima</dt><dd>${esc(proxima(a, s))}</dd></div>
+          </dl>
+          <div class="actions" style="margin-top:var(--s4)">
+            <button type="button" class="btn primary full" id="runAuto">Ejecutar ahora</button>
+            ${a.cada.semanal ? `<button type="button" class="btn full" id="runResumen">Enviar el resumen semanal ahora</button>` : ''}
+          </div>
+          <p class="note">Usa lo que tengas guardado. El resultado sale aquí y te llega ${S.cliente.email || S.cliente.telegram_chat_id ? 'a tus avisos' : '(cuando configures tus avisos)'}.</p>
+          <div id="runMsg"></div>
+        </div>
+        ${resultado(res, 'Último resultado')}
+        ${resultado(resR, 'Último resumen semanal')}
+      </aside>
+    </div>`;
+    const form = $('autoForm');
+    aplicarVisibilidad(form);
+    let dirty = false;
+    const marcar = () => { if (!dirty) { dirty = true; $('dirty').textContent = 'Cambios sin guardar'; } };
+    form.addEventListener('input', marcar);
+    form.addEventListener('change', () => { marcar(); aplicarVisibilidad(form); });
+    form.addEventListener('click', (e) => {
+      const add = e.target.closest('[data-add]');
+      if (add) {
+        const box = add.parentElement; const n = box.querySelectorAll('[data-item]').length;
+        if (n >= 5) return toast('Como mucho cinco');
+        add.insertAdjacentHTML('beforebegin', add.dataset.add === 'paso' ? pasoHtml({ horas: '', asunto: '', cupon: '' }, n) : sitioHtml({}, n));
+        marcar(); return;
+      }
+      const del = e.target.closest('[data-del]');
+      if (del) {
+        const box = del.closest('[data-list]'); del.closest('[data-item]').remove();
+        box.querySelectorAll('[data-item] .subform-head b').forEach((b, i) => { b.textContent = `${box.dataset.list === 'pasos' ? 'Aviso' : 'Página'} ${i + 1}`; });
+        marcar();
+      }
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault(); msg('autoMsg', '');
+      await busy($('saveAuto'), 'Guardando', async () => {
+        const r = await api('auto_guardar', { id, ajustes: leerForm(form, a) });
+        if (!r.ok) return msg('autoMsg', r.error);
+        s.ajustes = r.ajustes; dirty = false; $('dirty').textContent = '';
+        msg('autoMsg', r.mensaje || 'Guardado', 'ok');
+        toast('Cambios guardados');
+      });
+    });
+    const run = async (btn, modo) => {
+      msg('runMsg', '');
+      if (dirty) return msg('runMsg', 'Tienes cambios sin guardar: guárdalos antes para que se usen.', 'warn');
+      await busy(btn, 'Ejecutando', async () => {
+        const r = await api('auto_ejecutar', { id, modo });
+        await load(true);
+        msg('runMsg', r.ok ? r.mensaje : r.error, r.ok ? 'ok' : 'err');
+      });
+    };
+    $('runAuto').addEventListener('click', (e) => run(e.currentTarget, 'vigilancia'));
+    $('runResumen')?.addEventListener('click', (e) => run(e.currentTarget, 'resumen'));
+  }
+
+  // ---------------------------------------------------------------- pestaña del monitor
+  function renderMonitor(p) {
+    const s = servicio('monitor'); const r = s.estado || S.resumen; const st = estadoAuto(s);
+    const w = S.vigilancias; const aj = S.ajustes;
+    const productos = w.reduce((n, x) => n + (x.estado?.productos || 0), 0);
+    p.innerHTML = `<div class="p-grid">
+      <div>
+        <div class="p-card">
+          <div class="card-head"><div><p class="eyebrow" style="margin-bottom:var(--s3)">Competencia</p><h2>Añadir un enlace</h2></div><span class="hint num">${w.length} de ${aj.max_vigilancias} enlaces</span></div>
+          <form id="addForm" class="inline" autocomplete="off" novalidate>
+            <div><label for="url">Enlace de una tienda o de un producto</label><input id="url" inputmode="url" placeholder="https://tienda-competidor.com/products/camiseta" required></div>
+            <button class="btn primary" id="detectBtn">Comprobar</button>
+          </form>
+          <ul class="kinds">
+            <li><b>Producto concreto</b> de cualquier tienda: vigilo su precio y su stock. Puedes poner tu precio para saber si te ganan.</li>
+            <li><b>Tienda entera</b> Shopify o WooCommerce: pega la portada o una colección y vigilo todo su catálogo.</li>
+          </ul>
+          <div id="addMsg"></div><div id="preview"></div>
+        </div>
+        <div class="p-card">
+          <div class="card-head"><h2>Lo que vigilas</h2><span class="hint">Se revisa solo</span></div>
+          <div class="tbl-wrap"><table class="tbl">
+            <thead><tr><th>Enlace</th><th class="hide-s">Estado</th><th class="r">Precio</th><th class="r">Tu precio</th><th><span class="sr-only">Quitar</span></th></tr></thead>
+            <tbody id="watchRows">${filasMonitor()}</tbody>
+          </table></div>
+        </div>
+      </div>
+      <aside class="p-side">
+        <div class="p-card sunk">
+          <p class="eyebrow">Estado</p>
+          <span class="badge ${st.cls}">${esc(st.txt)}</span>
+          <dl class="facts tight">
+            <div><dt>Productos</dt><dd class="num">${productos.toLocaleString('es-ES')} en seguimiento</dd></div>
+            <div><dt>Cambios</dt><dd>${r?.cambios ?? '—'} en la última revisión</dd></div>
+            <div><dt>Última</dt><dd>${esc(r?.ultima ? ago(r.ultima) : 'todavía no')}</dd></div>
+          </dl>
+          <div class="actions" style="margin-top:var(--s4)"><button type="button" class="btn primary full" id="checkNow">Revisar ahora</button></div>
+          <div id="checkMsg"></div>
+        </div>
+        <form class="p-card" id="monForm">
+          <p class="eyebrow">Ajustes del monitor</p>
+          <div class="field"><label for="freq">Revisar cada</label><select id="freq">${[1, 3, 6, 12, 24].map((h) => `<option value="${h}"${aj.frecuencia_horas === h ? ' selected' : ''}>${horasTxt(h)}</option>`).join('')}</select></div>
+          <div class="field"><label for="thr">Avisar a partir de un cambio del</label><select id="thr">${[[0, 'cualquier cambio'], [1, '1 %'], [3, '3 %'], [5, '5 %'], [10, '10 %']].concat([0, 1, 3, 5, 10].includes(aj.umbral_pct) ? [] : [[aj.umbral_pct, `${aj.umbral_pct} %`]]).map(([v, t]) => `<option value="${v}"${aj.umbral_pct === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+          <label class="check"><input type="checkbox" id="optStock"${aj.avisar_stock ? ' checked' : ''}> <span>Cambios de stock</span></label>
+          <label class="check"><input type="checkbox" id="optNew"${aj.avisar_nuevos ? ' checked' : ''}> <span>Productos nuevos</span></label>
+          <label class="check"><input type="checkbox" id="optRemoved"${aj.avisar_retirados ? ' checked' : ''}> <span>Productos retirados</span></label>
+          <div class="actions"><button class="btn primary" id="saveMon">Guardar</button></div>
+          <div id="monMsg"></div>
+        </form>
+      </aside>
+    </div>`;
+    $('addForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault(); msg('addMsg', ''); $('preview').innerHTML = '';
+      if (!$('url').value.trim()) return msg('addMsg', 'Pega primero un enlace');
+      await busy($('detectBtn'), 'Comprobando', async () => {
+        const d = await api('detectar', { url: $('url').value });
+        if (!d.ok) return msg('addMsg', d.error);
+        pending = d; renderPreview(d);
+      });
+    });
+    $('watchRows').addEventListener('click', async (ev) => {
+      const id = ev.target.closest('[data-del]')?.dataset.del; if (!id) return;
+      const x = S.vigilancias.find((v) => v.id === id);
+      if (!confirm(`¿Dejar de vigilar «${x.nombre}»?`)) return;
+      const d = await api('borrar_vigilancia', { id }); if (!d.ok) return toast(d.error);
+      toast('Enlace quitado'); load(true);
+    });
+    $('watchRows').addEventListener('submit', async (ev) => {
+      ev.preventDefault(); const f = ev.target.closest('form'); if (!f) return;
+      const d = await api('editar_vigilancia', { id: f.dataset.id, mi_precio: f.p.value });
+      toast(d.ok ? 'Precio guardado' : d.error); if (d.ok) load(true);
+    });
+    $('monForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault(); msg('monMsg', '');
+      await busy($('saveMon'), 'Guardando', async () => {
+        const d = await api('ajustes', { email: S.cliente.email, telegram_chat_id: S.cliente.telegram_chat_id, frecuencia_horas: +$('freq').value, umbral_pct: +$('thr').value,
+          avisar_stock: $('optStock').checked, avisar_nuevos: $('optNew').checked, avisar_retirados: $('optRemoved').checked });
+        if (!d.ok) return msg('monMsg', d.error);
+        toast('Ajustes guardados'); load(true);
+      });
+    });
+    $('checkNow').addEventListener('click', async (ev) => {
+      msg('checkMsg', '');
+      await busy(ev.currentTarget, 'Revisando', async () => {
+        toast('Revisando tus enlaces… con tiendas grandes puede tardar un par de minutos');
+        const d = await api('revisar_ahora');
+        await load(true);
+        msg('checkMsg', d.ok ? (d.mensaje || 'Revisión terminada') : d.error, d.ok ? 'ok' : 'err');
+      });
+    });
+  }
+  function filasMonitor() {
+    return S.vigilancias.map((w) => {
       const e = w.estado;
-      const beaten = e && w.mi_precio && e.precio !== null && e.precio !== undefined && e.precio < w.mi_precio * (1 - (w.tolerancia_pct || 0) / 100);
+      const gana = e && w.mi_precio && e.precio !== null && e.precio !== undefined && e.precio < w.mi_precio * (1 - (w.tolerancia_pct || 0) / 100);
       const badge = !e ? '<span class="badge info">Pendiente</span>'
         : e.error && e.fallos ? `<span class="badge bad" title="${esc(e.error)}">Error</span>`
         : e.retirado ? '<span class="badge warn">No disponible</span>'
-        : beaten ? `<span class="badge bad">Te gana ${Math.abs(Math.round((e.precio - w.mi_precio) / w.mi_precio * 1000) / 10).toLocaleString('es-ES')} %</span>`
+        : gana ? `<span class="badge bad">Te gana ${Math.abs(Math.round((e.precio - w.mi_precio) / w.mi_precio * 1000) / 10).toLocaleString('es-ES')} %</span>`
         : `<span class="badge ok">${e.productos > 1 ? e.productos.toLocaleString('es-ES') + ' productos' : 'OK'}</span>`;
-      const isStore = /tienda$/.test(w.tipo);
-      const price = isStore ? '<span class="hint">catálogo</span>' : e ? `<span class="num"${beaten ? ' style="color:var(--bad);font-weight:600"' : ''}>${fmtMoney(e.precio, e.moneda || w.moneda)}</span>${e.stock === false ? '<div class="url">sin stock</div>' : ''}` : '—';
-      const mine = isStore ? '<span class="hint">—</span>'
-        : `<form class="price-edit" data-id="${esc(w.id)}"><input aria-label="Tu precio" inputmode="decimal" name="p" value="${w.mi_precio ?? ''}" placeholder="—"><button class="icon-btn" type="submit" title="Guardar tu precio">OK</button></form>`;
-      return `<tr><td><div class="name">${esc(w.nombre)}</div><div class="url">${esc(TYPES[w.tipo] || w.tipo)} · <a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.url.replace(/^https?:\/\//, '').slice(0, 60))}</a></div>
-        <div class="url">${e ? 'Revisado ' + ago(e.ultima) : 'Se revisará en la próxima pasada'}</div></td>
-        <td class="hide-s">${badge}</td><td class="r">${price}</td><td class="r">${mine}</td>
-        <td class="r"><button class="ghost danger icon-btn" data-del="${esc(w.id)}" title="Dejar de vigilar" aria-label="Dejar de vigilar ${esc(w.nombre)}">✕</button></td></tr>`;
-    }).join('');
-    $('watchRows').innerHTML = rows || '<tr><td colspan="5" class="empty">Todavía no vigilas nada. Pega arriba el enlace de un producto o de una tienda.</td></tr>';
-    $('email').value = s.cliente.email; $('chat').value = s.cliente.telegram_chat_id;
-    $('freq').value = String(s.ajustes.frecuencia_horas); $('thr').value = String(s.ajustes.umbral_pct);
-    if (!$('thr').value) { $('thr').insertAdjacentHTML('beforeend', `<option value="${s.ajustes.umbral_pct}">${s.ajustes.umbral_pct} %</option>`); $('thr').value = String(s.ajustes.umbral_pct); }
-    $('optStock').checked = s.ajustes.avisar_stock; $('optNew').checked = s.ajustes.avisar_nuevos; $('optRemoved').checked = s.ajustes.avisar_retirados;
+      const tienda = /tienda$/.test(w.tipo);
+      const precio = tienda ? '<span class="hint">catálogo</span>' : e ? `<span class="num"${gana ? ' style="color:var(--alert);font-weight:600"' : ''}>${money(e.precio, e.moneda || w.moneda)}</span>${e.stock === false ? '<div class="sub">sin stock</div>' : ''}` : '—';
+      const mio = tienda ? '<span class="hint">—</span>'
+        : `<form class="price-edit" data-id="${esc(w.id)}"><input aria-label="Tu precio" inputmode="decimal" name="p" value="${w.mi_precio ?? ''}" placeholder="—"><button class="btn sm" type="submit">OK</button></form>`;
+      return `<tr><td><div class="name">${esc(w.nombre)}</div><div class="sub">${esc(TYPES[w.tipo] || w.tipo)} · <a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.url.replace(/^https?:\/\//, '').slice(0, 60))}</a></div>
+        <div class="sub">${e ? 'Revisado ' + ago(e.ultima) : 'Se revisa en la próxima pasada'}</div></td>
+        <td class="hide-s">${badge}</td><td class="r">${precio}</td><td class="r">${mio}</td>
+        <td class="r"><button class="btn ghost sm danger" data-del="${esc(w.id)}" aria-label="Dejar de vigilar ${esc(w.nombre)}">Quitar</button></td></tr>`;
+    }).join('') || '<tr><td colspan="5" class="empty">Todavía no vigilas nada. Pega arriba el enlace de un producto o de una tienda.</td></tr>';
   }
-
   function renderPreview(d) {
-    const isStore = /tienda$/.test(d.tipo);
-    const items = (d.productos || []).map((p) => `<li>${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : '<span class="img-ph"></span>'}
-      <div><div class="name">${esc(p.name)}</div>${p.stock === false ? '<div class="url">sin stock</div>' : ''}</div>
-      <div class="p"><span class="num">${fmtMoney(p.price, p.currency || d.moneda)}</span>${p.regular ? `<div class="url"><s>${fmtMoney(p.regular, p.currency || d.moneda)}</s></div>` : ''}</div></li>`).join('');
+    const tienda = /tienda$/.test(d.tipo);
+    const items = (d.productos || []).map((x) => `<li>${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : '<span class="ph"></span>'}
+      <div><div class="name">${esc(x.name)}</div>${x.stock === false ? '<div class="hint">sin stock</div>' : ''}</div>
+      <div class="p"><span class="num">${money(x.price, x.currency || d.moneda)}</span>${x.regular ? `<div class="hint"><s>${money(x.regular, x.currency || d.moneda)}</s></div>` : ''}</div></li>`).join('');
     $('preview').innerHTML = `<div class="preview"><div class="preview-head"><span class="badge info">${esc(TYPES[d.tipo] || d.tipo)}</span>
-      <div><div class="name">${esc(d.nombre)}</div><div class="url">${isStore ? `${esc(String(d.total))} productos encontrados` : 'Producto encontrado'}</div></div></div>
-      <div class="preview-body">${d.aviso ? `<p class="msg" style="background:var(--warn-soft);color:var(--warn)">${esc(d.aviso)}</p>` : ''}<ul class="plist">${items}</ul>
-      <form id="confirmForm" style="margin-top:14px">
-        <div class="row">
-          <div><label for="wName">Nombre para reconocerlo</label><input id="wName" value="${esc(d.nombre)}" maxlength="80"></div>
-          ${isStore ? '' : `<div><label for="wMine">Tu precio (opcional)</label><input id="wMine" inputmode="decimal" placeholder="Ej. 24,90"></div>
-          <div><label for="wTol">Margen</label><select id="wTol"><option value="0">Avisar si es más barato</option><option value="2">…más de un 2 %</option><option value="5">…más de un 5 %</option></select></div>`}
+      <div><div class="name" style="font-weight:500;color:var(--ink)">${esc(d.nombre)}</div><div class="hint">${tienda ? `${esc(String(d.total))} productos encontrados` : 'Producto encontrado'}</div></div></div>
+      <div class="preview-body">${d.aviso ? `<p class="msg warn">${esc(d.aviso)}</p>` : ''}<ul class="plist">${items}</ul>
+      <form id="confirmForm" style="margin-top:var(--s4)">
+        <div class="fgrid">
+          <div class="field full"><label for="wName">Nombre para reconocerlo</label><input id="wName" value="${esc(d.nombre)}" maxlength="80"></div>
+          ${tienda ? '' : `<div class="field"><label for="wMine">Tu precio (opcional)</label><input id="wMine" inputmode="decimal" placeholder="24,90"></div>
+          <div class="field"><label for="wTol">Avisarme si es más barato</label><select id="wTol"><option value="0">…en cualquier cantidad</option><option value="2">…más de un 2 %</option><option value="5">…más de un 5 %</option></select></div>`}
         </div>
-        <div class="row" style="margin-top:4px"><button class="primary" type="submit" id="saveWatch">Empezar a vigilar</button><button type="button" id="cancelWatch">Cancelar</button></div>
+        <div class="actions" style="margin-top:0"><button class="btn primary" id="saveWatch">Empezar a vigilar</button><button type="button" class="btn ghost" id="cancelWatch">Cancelar</button></div>
       </form></div></div>`;
     $('confirmForm').addEventListener('submit', async (ev) => {
       ev.preventDefault();
-      await busy($('saveWatch'), async () => {
+      await busy($('saveWatch'), 'Guardando', async () => {
         const r = await api('guardar_vigilancia', { url: pending.url, nombre: $('wName').value, mi_precio: $('wMine')?.value ?? '', tolerancia_pct: $('wTol')?.value ?? 0 });
         if (!r.ok) return msg('addMsg', r.error);
-        $('preview').innerHTML = ''; $('url').value = ''; pending = null;
-        msg('addMsg', r.mensaje || 'Guardado', 'okay');
-        await load();
+        pending = null; toast(r.mensaje || 'Guardado'); load(true);
       });
     });
     $('cancelWatch').addEventListener('click', () => { $('preview').innerHTML = ''; pending = null; });
   }
 
-  async function load() {
-    const r = await api('estado');
-    if (!r.ok) { $('app').innerHTML = `<div class="center"><div><h1>No se puede abrir tu panel</h1><p class="sub">${esc(r.error)}</p></div></div>`; $('checkNow').hidden = true; return; }
-    const first = !state; state = r;
-    if (first) {
-      $('app').innerHTML = ''; $('app').append($('tpl').content.cloneNode(true)); bind();
-      if (BOT && !BOT.startsWith('__')) $('botLink').href = `https://t.me/${BOT}`; else $('botLink').removeAttribute('href');
-    }
-    render();
-  }
-
-  function bind() {
-    $('addForm').addEventListener('submit', async (ev) => {
-      ev.preventDefault(); msg('addMsg', ''); $('preview').innerHTML = '';
-      await busy($('detectBtn'), async () => {
-        const r = await api('detectar', { url: $('url').value });
-        if (!r.ok) return msg('addMsg', r.error);
-        pending = r; renderPreview(r);
-      });
-    });
-    $('watchRows').addEventListener('click', async (ev) => {
-      const id = ev.target.closest('[data-del]')?.dataset.del; if (!id) return;
-      const w = state.vigilancias.find((x) => x.id === id);
-      if (!confirm(`¿Dejar de vigilar «${w.nombre}»?`)) return;
-      const r = await api('borrar_vigilancia', { id }); if (!r.ok) return toast(r.error);
-      toast('Enlace eliminado'); load();
-    });
-    $('watchRows').addEventListener('submit', async (ev) => {
-      ev.preventDefault(); const f = ev.target.closest('form'); if (!f) return;
-      const r = await api('editar_vigilancia', { id: f.dataset.id, mi_precio: f.p.value });
-      toast(r.ok ? 'Precio guardado' : r.error); if (r.ok) load();
-    });
-    $('settingsForm').addEventListener('submit', async (ev) => {
+  // ---------------------------------------------------------------- avisos
+  function renderAvisos(p) {
+    const bot = BOT && !BOT.startsWith('__') ? `https://t.me/${BOT}` : '';
+    p.innerHTML = `<div class="p-grid">
+      <form class="p-card" id="setForm" novalidate>
+        <p class="eyebrow">Avisos</p>
+        <h2>Dónde te llegan los resultados</h2>
+        <p>Todas tus automatizaciones te escriben aquí. Un mensaje cuando hay algo que contar; nunca spam.</p>
+        <fieldset style="margin-top:var(--s5)"><div class="fgrid">
+          <div class="field full"><label for="email">Email</label><input id="email" type="email" value="${esc(S.cliente.email)}" placeholder="tu@tienda.com" autocomplete="email"></div>
+          <div class="field full"><label for="chat">Telegram · chat ID (opcional)</label><input id="chat" inputmode="numeric" value="${esc(S.cliente.telegram_chat_id)}" placeholder="123456789">
+            <ol class="kinds" style="list-style:decimal;padding-left:18px"><li>Abre ${bot ? `<a href="${esc(bot)}" target="_blank" rel="noopener">el bot de avisos</a>` : 'el bot de avisos de Denoro'} y pulsa <b>Iniciar</b>.</li><li>Escribe a <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a> y copia tu <b>Id</b>.</li></ol></div>
+        </div></fieldset>
+        <div class="actions"><button class="btn primary" id="saveSet">Guardar</button><button type="button" class="btn" id="testBtn">Enviarme una prueba</button></div>
+        <div id="setMsg"></div>
+      </form>
+      <aside class="p-side"><div class="p-card sunk">
+        <p class="eyebrow">Tus automatizaciones</p>
+        <ul class="chips sm" style="margin-top:var(--s2)">${S.servicios.map((s) => `<li>${esc(AUTO[s.id].nombre)}</li>`).join('')}</ul>
+        <p class="note">¿Quieres añadir otra o cambiar de plan? <a href="https://denoroautomations.com/automatizaciones.html" target="_blank" rel="noopener">Mira el catálogo</a> y escríbeme.</p>
+      </div></aside>
+    </div>`;
+    $('setForm').addEventListener('submit', async (ev) => {
       ev.preventDefault(); msg('setMsg', '');
-      await busy($('saveSettings'), async () => {
-        const r = await api('ajustes', { email: $('email').value, telegram_chat_id: $('chat').value, frecuencia_horas: +$('freq').value, umbral_pct: +$('thr').value,
-          avisar_stock: $('optStock').checked, avisar_nuevos: $('optNew').checked, avisar_retirados: $('optRemoved').checked });
+      await busy($('saveSet'), 'Guardando', async () => {
+        const r = await api('ajustes', { email: $('email').value, telegram_chat_id: $('chat').value });
         if (!r.ok) return msg('setMsg', r.error);
-        msg('setMsg', 'Ajustes guardados', 'okay'); load();
+        toast('Avisos guardados'); await load(true); msg('setMsg', 'Guardado', 'ok');
       });
     });
-    $('testBtn').addEventListener('click', async () => {
+    $('testBtn').addEventListener('click', async (ev) => {
       msg('setMsg', '');
-      await busy($('testBtn'), async () => {
+      await busy(ev.currentTarget, 'Enviando', async () => {
         const r = await api('probar_aviso');
-        msg('setMsg', r.ok ? r.mensaje : r.error, r.ok ? 'okay' : 'error');
+        msg('setMsg', r.ok ? r.mensaje : r.error, r.ok ? 'ok' : 'err');
       });
     });
   }
 
-  $('checkNow').addEventListener('click', async () => {
-    await busy($('checkNow'), async () => {
-      toast('Revisando tus enlaces… con tiendas grandes puede tardar un par de minutos');
-      const r = await api('revisar_ahora');
-      toast(r.ok ? (r.mensaje || 'Revisión terminada') : r.error);
-      if (r.ok) load();
-    });
+  // ---------------------------------------------------------------- carga
+  async function load(keep) {
+    const r = await api('estado');
+    if (!r.ok) { $('app').innerHTML = `<div class="center"><div><p class="eyebrow" style="justify-content:center">Denoro Automations</p><h1>No se puede abrir tu panel</h1><p class="lead">${esc(r.error)}</p></div></div>`; return; }
+    const first = !S; S = r;
+    if (first || !keep) { shell(); go(location.hash.slice(1) || 'resumen'); return; }
+    const y = window.scrollY; shell(); go(tab); window.scrollTo(0, y);
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tab]'); if (t) { go(t.dataset.tab, true); return; }
+    const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go, true); }
   });
+  document.addEventListener('keydown', (e) => {
+    if (!e.target.matches?.('.tab') || !['ArrowRight', 'ArrowLeft'].includes(e.key)) return;
+    const tabs = [...document.querySelectorAll('.tab')]; const i = tabs.indexOf(e.target);
+    const n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; n.focus(); go(n.dataset.tab);
+    document.getElementById(`tab-${n.dataset.tab}`)?.focus();
+  });
+  window.addEventListener('hashchange', () => { if (S && location.hash.slice(1) !== tab) go(location.hash.slice(1)); });
 
-  if (!token) { $('app').innerHTML = '<div class="center"><div><h1>Falta tu enlace de acceso</h1><p class="sub">Abre el enlace personal que te envié desde Denoro.</p></div></div>'; $('checkNow').hidden = true; }
+  if (!token) $('app').innerHTML = '<div class="center"><div><p class="eyebrow" style="justify-content:center">Denoro Automations</p><h1>Falta tu enlace de acceso</h1><p class="lead">Abre el enlace personal que te envié desde Denoro.</p></div></div>';
   else load();
 })();
 </script>
